@@ -13,8 +13,20 @@ void test_hal_spi_init(void)
 
 void test_hal_spi_run(void)
 {
+    uint8_t tx[32] = {};
+    uint8_t rx[32] = {};
+
+    for (size_t i = 0; i < sizeof(tx); i++) tx[i] = 0x3A;
+
     while (true) {
-        g_spi->transferByte(0xAA);
+        g_spi->transfer(tx, rx, sizeof(tx));
+
+        printf("[SPI] TX:");
+        for (size_t i = 0; i < sizeof(tx); i++) printf(" %02X", tx[i]);
+        printf("\n[SPI] RX:");
+        for (size_t i = 0; i < sizeof(rx); i++) printf(" %02X", rx[i]);
+        printf("\n\n");
+
         usleep(1000); // 1ms
     }
 }
