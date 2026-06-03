@@ -16,7 +16,7 @@ void test_hal_spi_run(void)
     uint8_t tx[32] = {};
     uint8_t rx[32] = {};
 
-    for (size_t i = 0; i < sizeof(tx); i++) tx[i] = 0x3A;
+    for (size_t i = 0; i < sizeof(tx); i++) tx[i] = i;
 
     while (true) {
         g_spi->transfer(tx, rx, sizeof(tx));
