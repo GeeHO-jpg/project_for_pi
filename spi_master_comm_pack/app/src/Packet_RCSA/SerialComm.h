@@ -14,9 +14,7 @@
 #include "CircularBuffer.h"
 #include "UDPPacket.h"
 #include "IDNumber.h"
-//#include "crc_32.h"
 
-// Function Pointer Types
 typedef bool (*UARTReadFunction)(uint8_t *byte);
 typedef void (*UARTWriteFunction)(uint8_t);
 

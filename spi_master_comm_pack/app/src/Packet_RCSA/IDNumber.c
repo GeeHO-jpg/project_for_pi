@@ -7,7 +7,6 @@
 
 #include "IDNumber.h"
 
-
 IDNumber* drone_id = NULL;
 
 bool IsInitializeIDNumber()
@@ -19,7 +18,7 @@ void InitializeIDNumber()
 {
     if (IsInitializeIDNumber())
         return;
-    
+
     drone_id = (IDNumber*)malloc(sizeof(IDNumber));
     if (drone_id == NULL)
         return;
@@ -36,7 +35,7 @@ void SetIDNumber(uint16_t id)
 {
     if (!IsInitializeIDNumber())
         return;
-    
+
     if (drone_id->id != id)
         drone_id->id = id;
 }

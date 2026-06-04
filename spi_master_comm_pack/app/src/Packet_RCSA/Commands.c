@@ -9,12 +9,9 @@
 
 bool IsValidUDPCommand(uint8_t command_byte)
 {
-    return command_byte <  CMD_COUNT;
+    return command_byte < CMD_COUNT;
 }
+
 bool IsValidTCPCommand(uint8_t command_byte) {
     return (command_byte < TCP_CMD_COUNT);
 }
-
-
-
-

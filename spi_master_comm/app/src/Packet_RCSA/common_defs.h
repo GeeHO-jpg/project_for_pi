@@ -139,10 +139,6 @@ typedef enum {
    COMMAND TYPE
    ============================================================ */
 
-/* ============================================================
-   COMMAND TYPE
-   ============================================================ */
-
 typedef enum {
 
     CMD_NONE = 0,
@@ -150,10 +146,11 @@ typedef enum {
     /* ================= SYSTEM ================= */
 
     CMD_HANDSHAKE,
-    CMD_INFO,      //--> STATION SEND TO SERVER
+    CMD_INFO,
     CMD_REBOOT,
 
     /* ================= GNSS ================= */
+
     CMD_RTCM,
 
     /* ================= FLIGHT ================= */
@@ -166,14 +163,15 @@ typedef enum {
     CMD_LANDING,
     CMD_RTL,
     CMD_GOTO,
-    CMD_MOVE,
-
+    CMD_MOVE, // int x,y,z,h
     /* ================= MISSION PIPELINE ================= */
+
     CMD_MISSION_REQUEST,
     CMD_MISSION_NEXT_POS,
     CMD_MISSION_OLD_POS,
 
-     /* ================= FILE ================= */
+    /* ================= FILE ================= */
+
     CMD_UPLOADFILE,
     CMD_FILE_REQUEST_NEXT,
     CMD_FILE_REQUEST_REPEAT,
@@ -202,45 +200,27 @@ typedef enum {
     CMD_CAM_ZOOM,
     CMD_CAM_TILT,
 
-    /* ================= I2C SENSOR ================= */
+    /* ================= SENSORS ================= */
+
     CMD_SENSOR_TEMP,
     CMD_SENSOR_HUM,
     CMD_EMERGENCYLANDING,
 
+    /* ================= EXTRA (STM/PI / STATION) ================= */
+
     CMD_STM_PI,
     CMD_STATION_POWER_UPS_SENSOR,
-    CMD_STATION_ENV_SENSOR,
-    CMD_STATION_WIND_SENSOR,
+    CMD_STATION_ASMOSPHERE_SENSOR1,
+    CMD_STATION_ASMOSPHERE_SENSOR2,
 
-    CMD_STATION_BT,           // BluetoothInfo_station
-    CMD_UAV_BT,               // BluetoothInfo_UAV
-
-    CMD_GET_IMAGE_INFO,       // Pi5 ขอ metadata ภาพ → ESP32 ตอบ image_info_t
-    CMD_GET_CHUNK,            // Pi5 ขอ chunk ภาพ    → ESP32 ตอบ chunk_data_t
-
+    CMD_STATION_BT,
+    CMD_UAV_BT,
+    CMD_CODENAME,
+    CMD_STREAM_KEY,
+    CMD_CAMERA_CODE,
     CMD_COUNT
+
 } CommandType;
-
-/* ============================================================
-   IMAGE TRANSFER
-   ============================================================ */
-
-#define IMAGE_WIDTH       320u
-#define IMAGE_HEIGHT      240u
-#define IMAGE_CHUNK_SIZE  512u
-#define IMAGE_NUM_CHUNKS  150u
-
-typedef struct {
-    uint16_t width;
-    uint16_t height;
-    uint32_t total_size;
-    uint16_t num_chunks;
-} image_info_t;  /* 10 bytes */
-
-typedef struct {
-    uint16_t chunk_index;
-    uint8_t  data[IMAGE_CHUNK_SIZE];
-} chunk_data_t;  /* 514 bytes */
 
 
 /* ============================================================

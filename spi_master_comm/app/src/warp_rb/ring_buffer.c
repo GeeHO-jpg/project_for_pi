@@ -5,23 +5,21 @@
  */
 
 #include "ring_buffer.h"
+#include "cmsis_gcc.h"
 
 #include <stdlib.h>
 #include <string.h>
-#include <pthread.h>
-
-static pthread_mutex_t s_mux = PTHREAD_MUTEX_INITIALIZER;
 
 static uint32_t rb_enter_critical(void)
 {
-    pthread_mutex_lock(&s_mux);
-    return 0;
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+    return primask;
 }
 
 static void rb_exit_critical(uint32_t primask)
 {
-    (void)primask;
-    pthread_mutex_unlock(&s_mux);
+    __set_PRIMASK(primask);
 }
 
 static uint16_t next_index(RingBuffer* rb, uint16_t index)

@@ -5,23 +5,8 @@
  *      Author: Lenovo
  */
 
-
 #include "SerialComm.h"
 #include "crc_32.h"
-
-
-//#include "debug.h"
-/* -------- DEBUG SEND BUFFER -------- */
-
-uint8_t debug_send_bytes[15];
-uint16_t debug_send_size = 0;
-
-/* -------- CRC DEBUG -------- */
-
-volatile uint32_t debug_crc_recv = 0;
-volatile uint32_t debug_crc_calc = 0;
-volatile uint32_t debug_crc_ok   = 0;
-volatile uint32_t debug_crc_fail = 0;
 
 bool IsOperableSerialComm(SerialComm* serial)
 {
@@ -30,7 +15,7 @@ bool IsOperableSerialComm(SerialComm* serial)
 
 SerialComm* CreateSerialComm(UARTReadFunction r_func, UARTWriteFunction w_func)
 {
-    SerialComm* serial = (SerialComm *)malloc(sizeof(SerialComm));
+    SerialComm* serial = (SerialComm*)malloc(sizeof(SerialComm));
     if (serial == NULL)
         return NULL;
 
@@ -38,7 +23,6 @@ SerialComm* CreateSerialComm(UARTReadFunction r_func, UARTWriteFunction w_func)
     if (serial->recv_buffer == NULL)
     {
         free(serial);
-        serial = NULL;
         return NULL;
     }
 
@@ -109,22 +93,18 @@ void RunReceiveSerialComm(SerialComm* serial)
         {
             uint8_t crc_bytes[sizeof(uint32_t)];
             uint32_t crc_recv;
-
             size_t got = 0;
 
             while (got < sizeof(uint32_t))
             {
                 if (!serial->Read(&crc_bytes[got]))
                     break;
-
                 got++;
             }
 
             if (got == sizeof(uint32_t))
             {
                 memcpy(&crc_recv, crc_bytes, sizeof(crc_recv));
-                debug_crc_recv = crc_recv;
-
                 FinalizeIncompletePacketSerialComm(serial, crc_recv);
             }
 
@@ -135,43 +115,38 @@ void RunReceiveSerialComm(SerialComm* serial)
 
 void ProcessBufferSerialComm(SerialComm* serial)
 {
-    // Check the first byte to see if it's part of the packet header
     uint8_t byte_1 = PeekCircularBufferHeadByte(serial->recv_buffer);
     if (!IsPacketHeaderFirstByte(byte_1))
         return;
 
-    // Read buffer to check for packet header signature
     uint8_t* buffer = ReadCircularBuffer(serial->recv_buffer);
     if (buffer == NULL)
         return;
 
     if (!IsPacketHeaderSignature(buffer))
     {
-        free(buffer);  // Free buffer if signature is invalid
+        free(buffer);
         return;
     }
 
-    // Extract UDP packet header
     UDPPacketHeader* header = GetUDPPacketHeader(buffer, serial->recv_buffer->size);
-    free(buffer);  // Free buffer after extracting header
+    free(buffer);
     if (header == NULL)
         return;
 
-    // Validate the extracted header
     if (!IsValidIDNumber(header->id) || !IsValidUDPCommand(header->cmd) || header->payload_size > UDPPAYLOAD_MAX_SIZE)
     {
-        free(header);  // Invalid header, free it and return
+        free(header);
         return;
     }
 
-    // Clean up any incomplete packets and create a new one
     FreeIncompletePacketSerialComm(serial);
     serial->incomplete_packet = CreateUDPPacket(header);
 
     if (serial->incomplete_packet != NULL)
-        ResetCircularBuffer(serial->recv_buffer);  // Only reset buffer if the packet was created
+        ResetCircularBuffer(serial->recv_buffer);
     else
-        free(header);   // If packet creation fails, free header
+        free(header);
 }
 
 void FinalizeIncompletePacketSerialComm(SerialComm* serial, uint32_t crc_recv)
@@ -205,9 +180,7 @@ UDPPacket* GetCompletePacketSerialComm(SerialComm* serial)
 
     if (!IsOperableUDPPacket(serial->complete_packet) || !IsPayloadCompletedUDPPacket(serial->complete_packet))
     {
-        // FreeUDPPacket(serial->complete_packet);
-        // serial->complete_packet = NULL;
-        FreeCompletePacketSerialComm( serial);
+        FreeCompletePacketSerialComm(serial);
         return NULL;
     }
 
@@ -216,49 +189,21 @@ UDPPacket* GetCompletePacketSerialComm(SerialComm* serial)
     return temp;
 }
 
-// void SendBytesSerialComm(SerialComm* serial, uint8_t* send_bytes, size_t send_size)
-// {
-//     if (!IsOperableSerialComm(serial) || send_bytes == NULL || send_size < 1)
-//         return;
-
-//     for (size_t i=0; i < send_size; i++)
-//     {
-//         serial->Write(send_bytes[i]);
-//     }
-// }
-
 void SendBytesSerialComm(SerialComm* serial, uint8_t* send_bytes, size_t send_size)
 {
     if (!IsOperableSerialComm(serial) || send_bytes == NULL || send_size < 1)
         return;
 
-    /* ---- DEBUG COPY ---- */
-    debug_send_size = send_size;
-
-    size_t debug_copy_size = send_size;
-
-    if(debug_copy_size > sizeof(debug_send_bytes))
-        debug_copy_size = sizeof(debug_send_bytes);
-
-    memcpy(debug_send_bytes, send_bytes, debug_copy_size);
-
-    /* ---- SEND REAL DATA ---- */
     for (size_t i = 0; i < send_size; i++)
-    {
         serial->Write(send_bytes[i]);
-    }
 }
 
 void SendUDPPacketSerialComm(SerialComm* serial, UDPPacket* packet)
 {
-
     if (!IsOperableSerialComm(serial) || !IsOperableUDPPacket(packet) || !IsPayloadCompletedUDPPacket(packet))
         return;
 
-
     uint8_t* header_bytes = ToBytesUDPPacketHeader(packet->header);
-    // Debug_Print("header_bytes");
-    // printArray(header_bytes , 9);
     if (header_bytes == NULL)
         return;
 
@@ -271,13 +216,10 @@ void SendUDPPacketSerialComm(SerialComm* serial, UDPPacket* packet)
     uint8_t crc_buf[sizeof(uint32_t)];
     memcpy(crc_buf, &crc_final, sizeof(uint32_t));
 
-
     SendBytesSerialComm(serial, header_bytes, UDPPACKETHEADER_SIZE);
     if (packet->header->payload_size > 0)
         SendBytesSerialComm(serial, packet->payload, packet->header->payload_size);
-
     SendBytesSerialComm(serial, crc_buf, sizeof(uint32_t));
 
     free(header_bytes);
-    header_bytes = NULL;
 }

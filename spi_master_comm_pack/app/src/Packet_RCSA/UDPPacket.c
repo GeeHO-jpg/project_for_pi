@@ -7,17 +7,14 @@
 
 #include "UDPPacket.h"
 
-
 UDPPacket* CreateUDPPacket(UDPPacketHeader* header)
 {
-    if (header == NULL) {
+    if (header == NULL)
         return NULL;
-    }
 
     UDPPacket* packet = (UDPPacket*)malloc(sizeof(UDPPacket));
-    if (packet == NULL) {
+    if (packet == NULL)
         return NULL;
-    }
 
     packet->header = header;
     packet->payload = NULL;
@@ -36,9 +33,8 @@ UDPPacket* CreateUDPPacket(UDPPacketHeader* header)
 
 void FreeUDPPacket(UDPPacket* packet)
 {
-    if (packet == NULL) {
+    if (packet == NULL)
         return;
-    }
 
     if (packet->header != NULL) {
         free(packet->header);
@@ -70,7 +66,6 @@ bool AppendBytePayloadUDPPacket(UDPPacket* packet, uint8_t in_byte)
         packet->payload_tail_index++;
         return true;
     }
-
     return false;
 }
 
@@ -85,7 +80,5 @@ bool AttachCompletedPayload(UDPPacket* packet, const uint8_t* payload_byte, uint
     } else if (payload_size == 0U) {
         return true;
     }
-
     return false;
 }
-

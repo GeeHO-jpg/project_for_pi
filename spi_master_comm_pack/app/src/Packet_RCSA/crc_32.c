@@ -7,7 +7,6 @@
 
 #include "crc_32.h"
 
-// Precomputed CRC-32 (IEEE 802.3) table
 static const uint32_t crc_table[] = {
     0x00000000UL, 0x77073096UL, 0xee0e612cUL, 0x990951baUL, 0x076dc419UL,
     0x706af48fUL, 0xe963a535UL, 0x9e6495a3UL, 0x0edb8832UL, 0x79dcb8a4UL,
@@ -63,31 +62,25 @@ static const uint32_t crc_table[] = {
     0x2d02ef8dUL
 };
 
-/* Initialize context (alias for reset). */
 void rcsa_crc32_init(rcsa_crc32_t *ctx) {
     rcsa_crc32_reset(ctx);
 }
 
-/* Reset CRC to all-1s (0xFFFFFFFF). */
 void rcsa_crc32_reset(rcsa_crc32_t *ctx) {
     ctx->crc = 0xFFFFFFFF;
 }
 
-/* Update CRC value with each byte of data. */
 bool rcsa_crc32_update(rcsa_crc32_t *ctx, const unsigned char *data, size_t data_size) {
     if (data == NULL || data_size < 1) {
-        return 0;  /* invalid input */
+        return 0;
     }
-    /* for-loop exactly like the C++ method */
     for (size_t i = 0; i < data_size; i++) {
         unsigned char index = (unsigned char)(ctx->crc ^ data[i]);
         ctx->crc = crc_table[index] ^ (ctx->crc >> 8);
     }
-
     return 1;
 }
 
-/* Finalize and return the bitwise NOT of the running CRC. */
 uint32_t rcsa_crc32_get(const rcsa_crc32_t *ctx) {
     return ~ctx->crc;
 }

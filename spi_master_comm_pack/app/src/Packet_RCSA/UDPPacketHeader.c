@@ -5,7 +5,6 @@
  *      Author: Lenovo
  */
 
-
 #include "UDPPacketHeader.h"
 
 bool IsPacketHeaderFirstByte(const uint8_t byte_1)
@@ -21,12 +20,10 @@ bool IsPacketHeaderSignature(const uint8_t* packet_signature)
 UDPPacketHeader* CreateUDPPacketHeader(uint16_t id, uint8_t cmd, uint16_t payload_size)
 {
     UDPPacketHeader* header = (UDPPacketHeader*)malloc(sizeof(UDPPacketHeader));
-    // Return NULL if memory allocation fails
     if (header == NULL)
         return NULL;
 
     memcpy(header->signature, PACKETHEADER_SIGNATURE, sizeof(header->signature));
-
     header->id = id;
     header->cmd = cmd;
     header->payload_size = payload_size;
@@ -43,7 +40,6 @@ UDPPacketHeader* GetUDPPacketHeader(uint8_t* header_bytes, size_t header_size)
         return NULL;
 
     UDPPacketHeader* header = (UDPPacketHeader*)malloc(sizeof(UDPPacketHeader));
-    // Return NULL if memory allocation fails
     if (header == NULL)
         return NULL;
 
@@ -58,7 +54,6 @@ UDPPacketHeader* GetUDPPacketHeader(uint8_t* header_bytes, size_t header_size)
     offset += sizeof(header->cmd);
 
     memcpy(&(header->payload_size), header_bytes + offset, sizeof(header->payload_size));
-    offset += sizeof(header->payload_size);
 
     return header;
 }
@@ -86,7 +81,3 @@ uint8_t* ToBytesUDPPacketHeader(UDPPacketHeader* header)
 
     return array;
 }
-
-
-
-

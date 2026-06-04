@@ -28,5 +28,4 @@ bool AppendCircularBuffer(CircularBuffer* buffer, uint8_t in_byte);
 uint8_t PeekCircularBufferHeadByte(CircularBuffer* buffer);
 uint8_t* ReadCircularBuffer(CircularBuffer* buffer);
 
-
 #endif /* INC_PACKET_HEADER_CIRCULARBUFFER_H_ */
