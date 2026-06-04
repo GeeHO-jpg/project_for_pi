@@ -41,7 +41,7 @@ int main()
     rb_init(&g_rx_rb, RB_SIZE);
 
     hal::SPIBus    spi("/dev/spidev0.0", 1000000);
-    hal::GPIOReady ready("gpiochip4", 22);
+    hal::GPIOReady ready("/dev/gpiochip4", 22);
 
     g_serial_tx = CreateSerialComm(spi_tx_read_dummy, spi_tx_write_byte);
     g_serial_rx = CreateSerialComm(spi_rx_read_byte,  spi_rx_write_dummy);

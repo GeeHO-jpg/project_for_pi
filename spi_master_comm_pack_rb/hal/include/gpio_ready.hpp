@@ -5,9 +5,9 @@ namespace hal {
 
 class GPIOReady {
 public:
-    // chip: "gpiochip4" บน Pi5
+    // chip_path: "/dev/gpiochip4" บน Pi5
     // line: GPIO number เช่น 22
-    GPIOReady(const char* chip, unsigned int line);
+    GPIOReady(const char* chip_path, unsigned int line);
     ~GPIOReady();
 
     GPIOReady(const GPIOReady&)            = delete;
@@ -19,9 +19,10 @@ public:
     bool waitReady(int timeout_ms = -1);
 
 private:
-    struct gpiod_chip* chip_;
-    struct gpiod_line* line_;
-    bool               pin_was_high_;   // HIGH ณ ตอน init → ไม่ต้องรอ edge แรก
+    struct gpiod_chip*         chip_;
+    struct gpiod_line_request* req_;
+    unsigned int               offset_;
+    bool                       pin_was_high_;   // HIGH ณ ตอน init → ไม่ต้องรอ edge แรก
 };
 
 } // namespace hal
