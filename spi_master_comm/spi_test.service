@@ -1,21 +1,11 @@
-# วิธีใช้:
-#   1. build โปรแกรมก่อน:        ./build.sh
-#   2. copy ไปติดตั้ง:            sudo cp spi_test.service /etc/systemd/system/
-#   3. เปิดใช้งานตอน boot:        sudo systemctl enable spi_test.service
-#   4. start ทันที:               sudo systemctl start spi_test.service
-#   5. ดูสถานะ:                   sudo systemctl status spi_test.service
-#   6. หยุดชั่วคราว:              sudo systemctl stop spi_test.service
-#   8. ไม่รันตอน boot อีกเลย:    sudo systemctl disable spi_test.service
-#   7. ถ้าแก้โค้ดแล้ว build ใหม่: sudo systemctl restart spi_test.service
-
 [Unit]
 Description=SPI Master Communication
-After=multi-user.target        # รอให้ระบบ boot เสร็จก่อนค่อยรัน
+After=multi-user.target
 
 [Service]
-ExecStart=/home/blueberrygay/Desktop/pi5_projects/clone_project/pi5_projects/spi_master_comm/spi_test
-Restart=always                 # restart อัตโนมัติถ้าโปรแกรม crash
-User=root                      # รันด้วย root เพราะต้องเข้าถึง /dev/spidev
+ExecStart=/home/blueberrygay/Desktop/project_for_pi/spi_master_comm/spi_test
+Restart=always
+User=root
 
 [Install]
-WantedBy=multi-user.target     # enable ตอน boot
+WantedBy=multi-user.target
