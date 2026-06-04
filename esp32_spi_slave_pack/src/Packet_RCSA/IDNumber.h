@@ -20,10 +20,18 @@ typedef struct {
 
 extern IDNumber* drone_id;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 bool IsInitializeIDNumber();
 void InitializeIDNumber();
 
 bool IsValidIDNumber(uint16_t id);
 void SetIDNumber(uint16_t id);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* INC_PACKET_HEADER_IDNUMBER_H_ */

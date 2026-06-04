@@ -54,6 +54,9 @@ static void task_print(void* arg);
 void setup() {
     Serial.begin(115200);
 
+    InitializeIDNumber();
+    SetIDNumber(1);
+
     slave.setDataMode(SPI_MODE0);
     slave.begin(FSPI, PIN_SCK, PIN_MISO, PIN_MOSI, PIN_CS);
 
