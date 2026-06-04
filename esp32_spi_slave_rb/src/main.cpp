@@ -95,8 +95,10 @@ static void task_spi(void* arg) {
         FreeUDPPacket(pkt);
 
         // ── Drain TX ring buffer → tx_buf[] ──────────────────────────────
+        printf("[TX_RB] before drain: %u bytes\n", rb_used(&g_tx_rb));
         memset(tx_buf, 0, BUF_SIZE);
         rb_get(&g_tx_rb, tx_buf, (uint16_t)BUF_SIZE);
+        printf("[TX_RB] after  drain: %u bytes\n", rb_used(&g_tx_rb));
 
         // ── Signal Pi: data ready ─────────────────────────────────────────
         digitalWrite(PIN_DATA_READY, HIGH);
@@ -109,9 +111,11 @@ static void task_spi(void* arg) {
 
         // ── Push RX bytes → RX ring buffer ───────────────────────────────
         rb_put(&g_rx_rb, rx_dma[buf_idx], (uint16_t)received);
+        printf("[RX_RB] after  push:  %u bytes\n", rb_used(&g_rx_rb));
 
         // ── Parse จาก RX ring buffer ─────────────────────────────────────
         RunReceiveSerialComm(g_serial_rx);              // ← spi_rx_read_byte ← g_rx_rb
+        printf("[RX_RB] after  parse: %u bytes\n", rb_used(&g_rx_rb));
         UDPPacket* rx_pkt = GetCompletePacketSerialComm(g_serial_rx);
 
         memcpy(msg.tx,     tx_buf,          BUF_SIZE);
@@ -135,11 +139,11 @@ static void task_print(void* arg) {
     PrintMsg msg;
     while (true) {
         if (xQueueReceive(g_print_queue, &msg, portMAX_DELAY)) {
-            printf("[TX]:");
-            for (size_t i = 0; i < BUF_SIZE; i++) printf(" %02X", msg.tx[i]);
+            // printf("[TX]:");
+            // for (size_t i = 0; i < BUF_SIZE; i++) printf(" %02X", msg.tx[i]);
 
-            printf("\n[RX]:");
-            for (size_t i = 0; i < msg.rx_len; i++) printf(" %02X", msg.rx_raw[i]);
+            // printf("\n[RX]:");
+            // for (size_t i = 0; i < msg.rx_len; i++) printf(" %02X", msg.rx_raw[i]);
 
             if (msg.rx_pkt_ok)
                 printf("\n[RX] OK  id=%u cmd=0x%02X\n", msg.rx_pkt_id, msg.rx_pkt_cmd);

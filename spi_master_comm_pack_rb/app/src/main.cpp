@@ -61,8 +61,10 @@ int main()
         FreeUDPPacket(tx_pkt);
 
         // ── Drain TX ring buffer → tx_buf[] ──────────────────────────────
+        printf("[TX_RB] before drain: %u bytes\n", rb_used(&g_tx_rb));
         memset(tx_buf, 0, BUF_SIZE);
         rb_get(&g_tx_rb, tx_buf, BUF_SIZE);
+        printf("[TX_RB] after  drain: %u bytes\n", rb_used(&g_tx_rb));
 
         // ── รอ ESP32 signal ready ─────────────────────────────────────────
         ready.waitReady();
@@ -72,9 +74,11 @@ int main()
 
         // ── Push RX bytes → RX ring buffer ───────────────────────────────
         rb_put(&g_rx_rb, rx_buf, BUF_SIZE);
+        printf("[RX_RB] after  push:  %u bytes\n", rb_used(&g_rx_rb));
 
         // ── Parse จาก RX ring buffer ─────────────────────────────────────
         RunReceiveSerialComm(g_serial_rx);              // ← spi_rx_read_byte ← g_rx_rb
+        printf("[RX_RB] after  parse: %u bytes\n", rb_used(&g_rx_rb));
         UDPPacket* rx_pkt = GetCompletePacketSerialComm(g_serial_rx);
 
         // ── Print ─────────────────────────────────────────────────────────
