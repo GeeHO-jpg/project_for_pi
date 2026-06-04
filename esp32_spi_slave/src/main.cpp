@@ -30,8 +30,8 @@ static void task_spi(void* arg) {
     while (true) {
         size_t received = slave.transfer(tx_buf, rx_buf, BUF_SIZE);
 
-        Serial.printf("RX (%u bytes):", received);
-        for (size_t i = 0; i < received; i++) Serial.printf(" %02X", rx_buf[i]);
-        Serial.println();
+        printf("[SPI] transfer done, received=%u\n", received);
+        for (size_t i = 0; i < received; i++) printf(" %02X", rx_buf[i]);
+        printf("\n");
     }
 }
