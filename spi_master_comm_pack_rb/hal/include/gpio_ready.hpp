@@ -13,14 +13,15 @@ public:
     GPIOReady(const GPIOReady&)            = delete;
     GPIOReady& operator=(const GPIOReady&) = delete;
 
-    // block จนกว่าจะเห็น rising edge (HIGH)
+    // block จนกว่าจะเห็น rising edge หรือ pin เป็น HIGH อยู่แล้ว
     // timeout_ms < 0 = รอไม่มีกำหนด
-    // return true = ได้ edge, false = timeout
+    // return true = ready, false = timeout
     bool waitReady(int timeout_ms = -1);
 
 private:
     struct gpiod_chip* chip_;
     struct gpiod_line* line_;
+    bool               pin_was_high_;   // HIGH ณ ตอน init → ไม่ต้องรอ edge แรก
 };
 
 } // namespace hal
