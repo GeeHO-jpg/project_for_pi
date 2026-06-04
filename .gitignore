@@ -1,1 +1,6 @@
+**/.pio/
+**/.vscode/.browse.c_cpp.db*
+**/.vscode/ipch/
+build/
+*.exe
 /first_project
