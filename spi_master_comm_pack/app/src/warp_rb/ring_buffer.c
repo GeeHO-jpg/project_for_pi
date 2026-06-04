@@ -6,23 +6,22 @@
 
 #include "ring_buffer.h"
 
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 
-static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
+static pthread_mutex_t s_mux = PTHREAD_MUTEX_INITIALIZER;
 
 static uint32_t rb_enter_critical(void)
 {
-    taskENTER_CRITICAL(&s_mux);
+    pthread_mutex_lock(&s_mux);
     return 0;
 }
 
 static void rb_exit_critical(uint32_t primask)
 {
     (void)primask;
-    taskEXIT_CRITICAL(&s_mux);
+    pthread_mutex_unlock(&s_mux);
 }
 
 static uint16_t next_index(RingBuffer* rb, uint16_t index)

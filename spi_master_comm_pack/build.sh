@@ -13,6 +13,6 @@ g++ -std=c++17 -Wall \
   app/src/Packet_RCSA/SerialComm.c \
   app/src/warp_rb/ring_buffer.c \
   -I . -I hal/include -I app/include -I app/src \
-  -o spi_test
+  -o spi_pack_test -lpthread
 
 echo "Build done!"
