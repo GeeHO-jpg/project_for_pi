@@ -1,0 +1,13 @@
+[Unit]
+Description=SPI Master Clean Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/home/blueberrygay/Desktop/project_for_pi/spi_master_clean/spi_master_clean
+WorkingDirectory=/home/blueberrygay/Desktop/project_for_pi/spi_master_clean
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
