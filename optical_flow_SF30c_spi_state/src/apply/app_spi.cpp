@@ -174,11 +174,11 @@ void app_tick() {
         }
 
         FreeUDPPacket(pkt);
+    } else if (msg.rx_timeout) {
+        s_next_resp = RESP_NONE;  // hardware timeout: both sides lost sync, reset
     }
-    /* On bad parse: keep s_next_resp unchanged.
-     * Transient CRC errors should not disrupt the current protocol state —
-     * master will retry the same command, and slave will reply correctly.
-     * RESP resets to RESP_NONE only when a valid CMD_NONE / unknown cmd is received. */
+    /* CRC/sig fail (rx_ok=false, rx_timeout=false): keep s_next_resp unchanged.
+     * Master will retry the same cmd; slave replies with the cached response. */
 
     xQueueSend(s_print_q, &msg, 0);
     s_buf_idx ^= 1;

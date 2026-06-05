@@ -93,6 +93,12 @@ void app_tick()
             return;
         }
 
+        if (pkt->header->cmd != (uint8_t)SPI_CMD_CAM_INFO) {
+            printf("[INFO] wrong cmd=0x%02X (stale resp, retry)\n", pkt->header->cmd);
+            FreeUDPPacket(pkt);
+            return;
+        }
+
         SpiCamInfo info;
         bool ok = spi_cmd_unpack_info_resp(pkt->payload, pkt->header->payload_size, &info);
         FreeUDPPacket(pkt);
@@ -133,6 +139,18 @@ void app_tick()
             go_info();
         } else {
             printf("[CHUNK] CRC fail (retry %d/%d)\n", s_retry, MAX_RETRY);
+        }
+        return;
+    }
+
+    if (pkt->header->cmd != (uint8_t)SPI_CMD_CAM_CHUNK) {
+        FreeUDPPacket(pkt);
+        if (++s_retry > MAX_RETRY) {
+            printf("[CHUNK] max retry exceeded → restart INFO\n");
+            go_info();
+        } else {
+            printf("[CHUNK] wrong cmd=0x%02X (stale resp, retry %d/%d)\n",
+                   pkt->header->cmd, s_retry, MAX_RETRY);
         }
         return;
     }
