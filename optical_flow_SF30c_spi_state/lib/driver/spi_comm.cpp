@@ -44,3 +44,8 @@ UDPPacket* spi_comm_parse_rx(void) {
     RunReceiveSerialComm(g_serial_rx);
     return GetCompletePacketSerialComm(g_serial_rx);
 }
+
+void spi_comm_flush_rx(void) {
+    uint8_t dummy;
+    while (rb_get_byte(&g_rx_rb, &dummy)) {}
+}

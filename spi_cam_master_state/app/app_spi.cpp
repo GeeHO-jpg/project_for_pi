@@ -72,7 +72,7 @@ static void go_info()
 void app_init()
 {
     spi_comm_init();
-    g_spi   = new hal::SPIBus("/dev/spidev0.0", 1000000);
+    g_spi   = new hal::SPIBus("/dev/spidev0.0", 500000);
     g_ready = new hal::GPIOReady("/dev/gpiochip4", 22);
 }
 

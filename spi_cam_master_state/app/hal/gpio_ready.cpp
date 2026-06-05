@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 #include <string>
+#include <unistd.h>
 
 namespace hal {
 
@@ -61,6 +62,7 @@ bool GPIOReady::waitReady(int timeout_ms)
     gpiod_edge_event* ev = gpiod_edge_event_buffer_get_event(buf, 0);
     bool rising = (gpiod_edge_event_get_event_type(ev) == GPIOD_EDGE_EVENT_RISING_EDGE);
     gpiod_edge_event_buffer_free(buf);
+    if (rising) usleep(200);  /* 200 μs: let slave DMA stabilise before clocking */
     return rising;
 }
 

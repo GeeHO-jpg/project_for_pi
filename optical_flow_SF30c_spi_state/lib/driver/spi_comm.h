@@ -25,6 +25,9 @@ void spi_comm_push_rx(const uint8_t *buf, uint16_t len);
 // RX: parse from RX ring buffer → return completed packet (caller must FreeUDPPacket)
 UDPPacket* spi_comm_parse_rx(void);
 
+// RX: discard all bytes currently in the RX ring buffer (call after transfer timeout)
+void spi_comm_flush_rx(void);
+
 #ifdef __cplusplus
 }
 #endif

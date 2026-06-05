@@ -15,6 +15,12 @@
 
 // ── SPI Slave HAL ─────────────────────────────────────────────────────────────
 
+// เรียกจาก ISR ทันทีหลัง SPI hardware โหลด TX buffer เสร็จ → ไม่มี race condition
+static void IRAM_ATTR spi_post_setup_cb(spi_slave_transaction_t *trans) {
+    (void)trans;
+    gpio_set_level((gpio_num_t)PIN_DATA_READY, 1);
+}
+
 static void spi_hal_init() {
     spi_bus_config_t bus_cfg = {};
     bus_cfg.mosi_io_num   = PIN_MOSI;
@@ -24,10 +30,12 @@ static void spi_hal_init() {
     bus_cfg.quadhd_io_num = -1;
 
     spi_slave_interface_config_t slv_cfg = {};
-    slv_cfg.spics_io_num = PIN_CS;
-    slv_cfg.flags        = 0;
-    slv_cfg.queue_size   = 1;
-    slv_cfg.mode         = 0;
+    slv_cfg.spics_io_num  = PIN_CS;
+    slv_cfg.flags         = 0;
+    slv_cfg.queue_size    = 1;
+    slv_cfg.mode          = 0;
+    slv_cfg.post_setup_cb = spi_post_setup_cb;  // raise DATA_READY เมื่อ HW พร้อม
+    slv_cfg.post_trans_cb = NULL;
 
     ESP_ERROR_CHECK(spi_slave_initialize(SPI2_HOST, &bus_cfg, &slv_cfg, SPI_DMA_CH_AUTO));
 }
@@ -43,16 +51,14 @@ static void gpio_hal_init() {
     gpio_set_level((gpio_num_t)PIN_DATA_READY, 0);
 }
 
-static void gpio_hal_set_ready(bool ready) {
-    gpio_set_level((gpio_num_t)PIN_DATA_READY, ready ? 1 : 0);
-}
-
 static size_t spi_hal_transfer(const uint8_t *tx, uint8_t *rx, size_t size) {
     spi_slave_transaction_t t = {};
     t.length    = size * 8;
     t.tx_buffer = tx;
     t.rx_buffer = rx;
-    esp_err_t ret = spi_slave_transmit(SPI2_HOST, &t, pdMS_TO_TICKS(100));
+    // post_setup_cb raise DATA_READY เมื่อ HW พร้อม, transmit รอ master clock
+    esp_err_t ret = spi_slave_transmit(SPI2_HOST, &t, pdMS_TO_TICKS(1000));
+    gpio_set_level((gpio_num_t)PIN_DATA_READY, 0);
     if (ret != ESP_OK) return 0;
     return (t.trans_len + 7) / 8;
 }
@@ -76,6 +82,7 @@ static QueueHandle_t s_print_q;
 
 struct PrintMsg {
     bool     rx_ok;
+    bool     rx_timeout;  // true = spi_slave_transmit returned 0 (master never clocked)
     uint8_t  rx_cmd;
     uint16_t chunk_idx;
 };
@@ -128,16 +135,20 @@ void app_tick() {
 
     spi_comm_drain_tx(s_tx_buf, SPI_COMM_BUF_SIZE);
 
-    // ── HAL: signal ready → SPI transfer → clear ready ───────────────────
-    gpio_hal_set_ready(true);
+    // ── HAL: SPI transfer (DATA_READY managed inside spi_hal_transfer) ───
     size_t received = spi_hal_transfer(s_tx_buf, s_rx_dma[s_buf_idx], SPI_COMM_BUF_SIZE);
-    gpio_hal_set_ready(false);
 
     // ── Parse RX → decide next TX ────────────────────────────────────────
-    spi_comm_push_rx(s_rx_dma[s_buf_idx], (uint16_t)received);
+    PrintMsg msg = {};
+    msg.rx_timeout = (received == 0);
+
+    if (received == 0) {
+        spi_comm_flush_rx();  // discard stale bytes so next good tick parses cleanly
+    } else {
+        spi_comm_push_rx(s_rx_dma[s_buf_idx], (uint16_t)received);
+    }
     UDPPacket *pkt = spi_comm_parse_rx();
 
-    PrintMsg msg = {};
     msg.rx_ok = (pkt != nullptr);
 
     if (pkt) {
@@ -182,7 +193,10 @@ static void task_print(void*) {
     while (true) {
         if (xQueueReceive(s_print_q, &msg, portMAX_DELAY)) {
             if (!msg.rx_ok) {
-                printf("[SPI] bad/empty packet\n");
+                if (msg.rx_timeout)
+                    printf("[SPI] transfer timeout (master did not clock)\n");
+                else
+                    printf("[SPI] bad packet (CRC/signature fail)\n");
             } else if (msg.rx_cmd == (uint8_t)SPI_CAM_CMD_INFO) {
                 printf("[SPI] INFO req → sending SpiCamInfo (%ux%u chunks=%u size=%u)\n",
                        DUMMY_IMG_WIDTH, DUMMY_IMG_HEIGHT, DUMMY_CHUNK_COUNT, DUMMY_CHUNK_SIZE);
