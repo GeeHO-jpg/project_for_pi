@@ -10,7 +10,7 @@
 
 /* ── Configuration ───────────────────────────────────────────────────────── */
 static constexpr int READY_TIMEOUT_MS = 1000;
-static constexpr int MAX_RETRY        = 3;
+static constexpr int MAX_RETRY        = 15;
 
 /* ── HAL handles ─────────────────────────────────────────────────────────── */
 static hal::SPIBus*    g_spi   = nullptr;
@@ -72,7 +72,7 @@ static void go_info()
 void app_init()
 {
     spi_comm_init();
-    g_spi   = new hal::SPIBus("/dev/spidev0.0", 500000);
+    g_spi   = new hal::SPIBus("/dev/spidev0.0", 200000);
     g_ready = new hal::GPIOReady("/dev/gpiochip4", 22);
 }
 
