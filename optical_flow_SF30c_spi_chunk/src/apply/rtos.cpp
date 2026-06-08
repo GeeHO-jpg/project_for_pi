@@ -4,6 +4,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <freertos/queue.h>
 #include "esp_system.h"
 #include "esp_log.h"
 #include "driver/uart.h"
@@ -27,6 +28,9 @@
 
 
 #include "app_spi.h"
+#include "chunk_manage.h"
+#include "spi_comm.h"
+#include "protocal/Packet_RCSA/Commands.h"
 
 // #include "crc32.h"
 
@@ -78,14 +82,21 @@ float dist_m;
 #define CMD_HDR_SIZE 9
 #define CMD_CRC_SIZE 4
 
+#define CHUNK_SIZE 2
+#define FRAME_SIZE (9 + CHUNK_SIZE + 4)
+
 static SemaphoreHandle_t dist_mtx = nullptr;
 static SemaphoreHandle_t g_pyq = nullptr;
+static QueueHandle_t s_print_q;
 
 static volatile uint16_t g_dist_cm = 0;
 static volatile float    g_dist_m  = 0.0f;
 static volatile uint32_t g_last_seq = 0;
 
 static volatile  bool send_img = false;
+
+static uint8_t s_tx_buf[9 + CHUNK_SIZE + 4];
+static uint8_t s_rx_buf[9 + CHUNK_SIZE + 4];
 // static const uint8_t PACKETHEADER_SIGNATURE[4] = {'R', 'C', 'S', 'A'};
 
 struct diff_pix_t{
@@ -97,6 +108,19 @@ struct diff_pix_t{
   uint16_t dist_cm; 
 };
 
+struct PrintMsg {
+    bool     ok;
+    uint16_t id;
+    uint8_t  cmd;
+    uint8_t  tx[FRAME_SIZE];
+    uint8_t  rx[FRAME_SIZE];
+};
+
+static const uint8_t k_payload[SPI_COMM_PAYLOAD_SIZE] = {
+    0xFF, 0xFE, 0xFD, 0xFC, 0xFB, 0xFA, 0xF9, 0xF8,
+    0xF7, 0xF6, 0xF5, 0xF4, 0xF3, 0xF2, 0xF1, 0xF0,
+    0xEF, 0xEE, 0xED
+};
 
 /*
     prototype_function
@@ -107,6 +131,7 @@ struct diff_pix_t{
 void process(void*);
 void lidar_task(void*);
 void send_img_task(void*);
+void task_print(void*);
 /* test q and mutex */
 // void producer_task(void *arg);
 
@@ -163,12 +188,13 @@ void rtos_init(){
 
     dist_mtx = xSemaphoreCreateMutex();
     g_pyq = xSemaphoreCreateMutex();
+    s_print_q = xQueueCreate(4, sizeof(PrintMsg));
  
     xTaskCreatePinnedToCore(process,"process",16384,NULL,5,NULL,1); 
    
     xTaskCreatePinnedToCore(lidar_task,"LiDAR",2048,NULL,3,NULL,1);   
     xTaskCreatePinnedToCore(send_img_task, "send_img", 4096, NULL, 2, NULL, 0);
-    // xTaskCreatePinnedToCore(monitor_task, "monitor", 4096, NULL, 1, NULL, 0);
+    // xTaskCreatePinnedToCore(task_print, "print", 4096, NULL, 1, NULL, 0);
 }
 
 
@@ -571,8 +597,8 @@ void process(void *arg){
 
                     if(ok && dist_ok && (time_now_us - last_print_us) >= 0){
                         last_print_us = time_now_us;
-                        // printf("opt flow sent: pixel=(%d, %d) comp=(%.3f, %.3f) qual=%u dist=%.2fm\n",
-                        //     (int16_t)body_pixel_x, (int16_t)body_pixel_y, body_x, body_y, qual_send, dist_m);
+                        printf("opt flow sent: pixel=(%d, %d) comp=(%.3f, %.3f) qual=%u dist=%.2fm\n",
+                            (int16_t)body_pixel_x, (int16_t)body_pixel_y, body_x, body_y, qual_send, dist_m);
                     }
                 t2 = esp_timer_get_time();
 
@@ -615,6 +641,65 @@ void process(void *arg){
 
 void send_img_task(void*)
 {
+    static uint16_t chunk_total =0;
+    static uint8_t chunk_buf[(9+CHUNK_SIZE+4)];
+    TickType_t last_yield = xTaskGetTickCount();
+
     app_spi_init();
-    vTaskDelete(NULL);  // ลบ task ตัวเองหลังสร้าง sub-tasks เสร็จ
+
+    while (true) {
+
+
+        chunk_total = total_chunks(SPI_COMM_PAYLOAD_SIZE, CHUNK_SIZE);
+        for (uint16_t i = 0; i < chunk_total; i++)
+        {
+            // เลือก chunk ถัดไป (จะวนกลับไป chunk แรกเมื่อครบ)
+            uint16_t chunk_len = select_chunk(chunk_buf, k_payload, SPI_COMM_PAYLOAD_SIZE, CHUNK_SIZE);
+
+            // ── Driver: build TX packet → TX ring buffer ──────────────────────────
+            spi_comm_build_tx(CMD_HANDSHAKE, chunk_buf, chunk_len);
+
+            // ── Driver: drain TX ring buffer → flat buffer ────────────────────────
+            memset(s_tx_buf, 0, (9+CHUNK_SIZE+4)); // Clear only the part we will use
+            spi_comm_drain_tx(s_tx_buf, (9+CHUNK_SIZE+4));
+
+            // ── HAL: signal ready → SPI transfer → clear ready ───────────────────
+            gpio_hal_set_ready(true);
+            size_t received = spi_hal_transfer(s_tx_buf, s_rx_buf, (9+CHUNK_SIZE+4));
+            gpio_hal_set_ready(false);
+
+            // ── Driver: push RX bytes → RX ring buffer → parse ────────────────────
+            spi_comm_push_rx(s_rx_buf, (uint16_t)received);
+            UDPPacket* pkt = spi_comm_parse_rx();
+
+            // ── Notify print task ─────────────────────────────────────────────────
+            PrintMsg msg = { pkt != nullptr, 0, 0, {}, {} };
+            memcpy(msg.tx, s_tx_buf, FRAME_SIZE);
+            memcpy(msg.rx, s_rx_buf, FRAME_SIZE);
+            if (pkt) {
+                msg.id  = pkt->header->id;
+                msg.cmd = pkt->header->cmd;
+                FreeUDPPacket(pkt);
+            }
+            xQueueSend(s_print_q, &msg, 0);
+        }
+    }
+}
+
+void task_print(void*) {
+    PrintMsg msg;
+    while (true) {
+        if (xQueueReceive(s_print_q, &msg, portMAX_DELAY)) {
+            // printf("[TX]:");
+            // for (size_t i = 0; i < FRAME_SIZE; i++) printf(" %02X", msg.tx[i]);
+            // printf("\n[RX]:");
+            // for (size_t i = 0; i < FRAME_SIZE; i++) printf(" %02X", msg.rx[i]);
+
+            if (msg.ok)
+                printf("\n[RX] OK  id=%u cmd=0x%02X\n\n", msg.id, msg.cmd);
+            else
+                printf("\n[RX] FAIL (bad signature or CRC)\n\n");
+        }
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
 }
