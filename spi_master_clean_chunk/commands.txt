@@ -1,5 +1,7 @@
 == BUILD ==
+
 chmod +x build.sh
+
 cd ~/Desktop/project_for_pi/spi_master_comm
 ./build.sh
 

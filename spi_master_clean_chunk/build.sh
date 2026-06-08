@@ -27,6 +27,6 @@ g++ -std=c++17 -Wall -Wextra \
   -I app/driver \
   -I app/hal \
   -lgpiod \
-  -o spi_master_clean
+  -o spi_master_clean_chunk
 
-echo "Build done -> ./spi_master_clean"
+echo "Build done -> ./spi_master_clean_chunk"
