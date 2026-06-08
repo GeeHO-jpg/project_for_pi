@@ -16,6 +16,7 @@
 #include "chunk_manage.h"
 
 #define CHUNK_SIZE 2
+#define FRAME_SIZE (9 + CHUNK_SIZE + 4)
 
 // ── SPI Slave HAL ─────────────────────────────────────────────────────────────
 
@@ -72,6 +73,8 @@ struct PrintMsg {
     bool     ok;
     uint16_t id;
     uint8_t  cmd;
+    uint8_t  tx[FRAME_SIZE];
+    uint8_t  rx[FRAME_SIZE];
 };
 
 static const uint8_t k_payload[SPI_COMM_PAYLOAD_SIZE] = {
@@ -120,7 +123,9 @@ void app_tick() {
         UDPPacket* pkt = spi_comm_parse_rx();
 
         // ── Notify print task ─────────────────────────────────────────────────
-        PrintMsg msg = { pkt != nullptr, 0, 0 };
+        PrintMsg msg = { pkt != nullptr, 0, 0, {}, {} };
+        memcpy(msg.tx, s_tx_buf, FRAME_SIZE);
+        memcpy(msg.rx, s_rx_buf, FRAME_SIZE);
         if (pkt) {
             msg.id  = pkt->header->id;
             msg.cmd = pkt->header->cmd;
@@ -138,10 +143,15 @@ static void task_print(void*) {
     PrintMsg msg;
     while (true) {
         if (xQueueReceive(s_print_q, &msg, portMAX_DELAY)) {
+            // printf("[TX]:");
+            // for (size_t i = 0; i < FRAME_SIZE; i++) printf(" %02X", msg.tx[i]);
+            // printf("\n[RX]:");
+            // for (size_t i = 0; i < FRAME_SIZE; i++) printf(" %02X", msg.rx[i]);
+
             if (msg.ok)
-                printf("[RX] OK  id=%u cmd=0x%02X\n", msg.id, msg.cmd);
+                printf("\n[RX] OK  id=%u cmd=0x%02X\n\n", msg.id, msg.cmd);
             else
-                printf("[RX] FAIL (bad signature or CRC)\n");
+                printf("\n[RX] FAIL (bad signature or CRC)\n\n");
         }
     }
 }
