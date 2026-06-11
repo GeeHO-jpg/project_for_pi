@@ -12,8 +12,9 @@ struct Ctx {
     uint16_t data_capacity = 0;
 
     // ── ผลลัพธ์ล่าสุดจาก CMD_INFO ──
-    uint8_t data_chunk_size   = 0;
-    uint8_t data_total_chunks = 0;
+    uint8_t  data_chunk_size   = 0;
+    uint8_t  data_total_chunks = 0;
+    uint16_t data_payload_size = 0; // ขนาดข้อมูลจริง (ไม่รวม padding ของ chunk สุดท้าย)
 
     // ── chunk_index ที่กำลังขอ/รออยู่ (ใช้เฉพาะ state DataRequest) ──
     uint8_t next_index = 0;
@@ -81,6 +82,13 @@ bool app_state_handle_rx(UDPPacket* pkt) {
 
             g_ctx.data_chunk_size   = chunk_size;
             g_ctx.data_total_chunks = total_chunks;
+
+            // payload[2] = ขนาดข้อมูลจริงที่ slave มี (ไม่รวม padding ของ chunk สุดท้าย)
+            // ถ้า slave รุ่นเก่าไม่ส่งมา ให้ fallback เป็น chunk_size * total_chunks เหมือนเดิม
+            uint16_t full_size = (uint16_t)total_chunks * chunk_size;
+            uint16_t payload_size = (pkt->header->payload_size >= 3) ? pkt->payload[2] : full_size;
+            if (payload_size == 0 || payload_size > full_size) payload_size = full_size;
+            g_ctx.data_payload_size = payload_size;
 
             // ต่อไปขอ CMD_DATA ตั้งแต่ chunk แรก
             g_ctx.next_index = 0;

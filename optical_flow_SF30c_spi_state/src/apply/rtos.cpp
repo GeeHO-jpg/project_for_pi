@@ -680,10 +680,11 @@ void send_img_task(void*)
 
         if (pkt) {
             if (pkt->header->cmd == CMD_PROTO_INFO) {
-                // ── CMD_INFO: ตอบขนาด chunk และจำนวน chunk ทั้งหมดของ k_payload ──
-                // (master อ่าน payload[0]=chunk_size, payload[1]=total_chunks)
+                // ── CMD_INFO: ตอบขนาด chunk, จำนวน chunk และขนาดข้อมูลจริงของ k_payload ──
+                // (master อ่าน payload[0]=chunk_size, payload[1]=total_chunks, payload[2]=payload_size จริง)
                 resp_buf[0] = (uint8_t)DATA_CHUNK_SIZE;
                 resp_buf[1] = (uint8_t)DATA_TOTAL_CHUNKS;
+                resp_buf[2] = (uint8_t)SPI_COMM_DATA_PAYLOAD_SIZE;
                 spi_comm_build_tx(CMD_PROTO_INFO, resp_buf, CHUNK_SIZE);
 
             } else if (pkt->header->cmd == CMD_PROTO_DATA) {
