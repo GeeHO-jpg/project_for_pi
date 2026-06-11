@@ -651,10 +651,9 @@ void process(void *arg){
 
 void send_img_task(void*)
 {
-    // resp_buf[0]    = chunk_index (echo กลับให้ master)
-    // resp_buf[1..]  = ข้อมูล:
-    //   - CMD_INFO -> [1]=DATA_CHUNK_SIZE, [2]=DATA_TOTAL_CHUNKS, ที่เหลือ = 0
-    //   - CMD_DATA -> ข้อมูลของ chunk ที่ขอมา (เติม 0 ถ้า chunk สุดท้ายไม่เต็ม)
+    // resp_buf format ขึ้นกับ cmd:
+    //   - CMD_INFO -> [0]=DATA_CHUNK_SIZE, [1]=DATA_TOTAL_CHUNKS, ที่เหลือ = 0
+    //   - CMD_DATA -> [0]=chunk_index (echo กลับให้ master), [1..]=ข้อมูลของ chunk ที่ขอมา (เติม 0 ถ้า chunk สุดท้ายไม่เต็ม)
     static uint8_t resp_buf[CHUNK_SIZE];
 
     app_spi_init();
@@ -682,8 +681,9 @@ void send_img_task(void*)
         if (pkt) {
             if (pkt->header->cmd == CMD_PROTO_INFO) {
                 // ── CMD_INFO: ตอบขนาด chunk และจำนวน chunk ทั้งหมดของ k_payload ──
-                resp_buf[1] = (uint8_t)DATA_CHUNK_SIZE;
-                resp_buf[2] = (uint8_t)DATA_TOTAL_CHUNKS;
+                // (master อ่าน payload[0]=chunk_size, payload[1]=total_chunks)
+                resp_buf[0] = (uint8_t)DATA_CHUNK_SIZE;
+                resp_buf[1] = (uint8_t)DATA_TOTAL_CHUNKS;
                 spi_comm_build_tx(CMD_PROTO_INFO, resp_buf, CHUNK_SIZE);
 
             } else if (pkt->header->cmd == CMD_PROTO_DATA) {
