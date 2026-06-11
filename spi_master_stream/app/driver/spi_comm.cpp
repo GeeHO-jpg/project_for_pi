@@ -46,3 +46,10 @@ UDPPacket* spi_comm_parse_rx(void) {
     RunReceiveSerialComm(g_serial_rx);
     return GetCompletePacketSerialComm(g_serial_rx);
 }
+
+void spi_comm_flush_rx(void) {
+    rb_flush(&g_rx_rb);
+    FreeIncompletePacketSerialComm(g_serial_rx);
+    FreeCompletePacketSerialComm(g_serial_rx);
+    ResetCircularBuffer(g_serial_rx->recv_buffer);
+}

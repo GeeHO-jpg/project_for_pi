@@ -1,6 +1,7 @@
 #include "app_state.h"
 #include "driver/spi_comm.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -32,7 +33,14 @@ struct Ctx {
     uint8_t* data_assembled = nullptr; // กำลังประกอบ
     uint8_t* data_ready     = nullptr; // commit แล้ว, พร้อมใช้งาน
     bool     data_ready_valid = false;
+
+    // จำนวน tick ติดต่อกันที่ RX FAIL/ไม่ตรงกับ request ปัจจุบัน (ใช้ตรวจจับ slave ค้าง)
+    uint32_t stall_ticks = 0;
 };
+
+// ถ้า RX FAIL ติดต่อกันเกินจำนวนนี้ ถือว่า slave ค้าง/รีเซ็ตตัวเองไปแล้ว
+// -> resync กลับไปเริ่มที่ CMD_INFO ใหม่ + ล้าง rx ring buffer ไม่ให้ค้างขอ chunk เดิมตลอดไป
+constexpr uint32_t STALL_RESYNC_THRESHOLD = 30;
 
 Ctx g_ctx;
 
@@ -69,7 +77,8 @@ void app_state_prepare_tx() {
 }
 
 bool app_state_handle_rx(UDPPacket* pkt) {
-    bool committed = false;
+    bool committed  = false;
+    bool progressed = false; // true ถ้า tick นี้ทำให้ state machine ขยับไปข้างหน้า (ไม่ใช่แค่ retry เดิม)
 
     switch (g_ctx.state) {
 
@@ -106,6 +115,7 @@ bool app_state_handle_rx(UDPPacket* pkt) {
             // ต่อไปขอ CMD_DATA ตั้งแต่ chunk แรก
             g_ctx.next_index = 0;
             g_ctx.state      = CommState::DataRequest;
+            progressed       = true;
             break;
         }
 
@@ -131,6 +141,8 @@ bool app_state_handle_rx(UDPPacket* pkt) {
             memcpy(g_ctx.data_assembled + offset, &pkt->payload[2], copy_len);
 
             g_ctx.next_index++;
+            progressed = true; // ได้ chunk ใหม่เพิ่ม -> ถือว่าขยับไปข้างหน้าแล้ว
+
             if (g_ctx.next_index < g_ctx.data_total_chunks) {
                 break; // ยังไม่ครบ -> tick ถัดไปขอ chunk ถัดไปต่อ
             }
@@ -143,6 +155,25 @@ bool app_state_handle_rx(UDPPacket* pkt) {
             g_ctx.next_index = 0;
             g_ctx.state      = CommState::InfoRequest;
             break;
+        }
+    }
+
+    // ── stall watchdog: ถ้าไม่มีความคืบหน้าติดต่อกันนานเกินไป (slave ค้าง/รีเซ็ตตัวเอง) ──
+    // resync กลับไปขอ CMD_INFO ใหม่ทั้งหมด + ล้าง rx ring buffer ที่อาจมีขยะตกค้างอยู่
+    // ป้องกันไม่ให้ค้างขอ chunk เดิม (เช่น idx=17) วนไปตลอดจนต้องไปรีเซ็ตฝั่ง slave เอง
+    if (progressed) {
+        g_ctx.stall_ticks = 0;
+    } else {
+        g_ctx.stall_ticks++;
+        if (g_ctx.stall_ticks >= STALL_RESYNC_THRESHOLD) {
+            printf("[RESYNC] no progress for %u ticks (state=%s, next_index=%u) -> back to INFO_REQUEST + flush rx\n",
+                   STALL_RESYNC_THRESHOLD,
+                   (g_ctx.state == CommState::InfoRequest) ? "INFO_REQUEST" : "DATA_REQUEST",
+                   g_ctx.next_index);
+            g_ctx.stall_ticks = 0;
+            g_ctx.next_index  = 0;
+            g_ctx.state       = CommState::InfoRequest;
+            spi_comm_flush_rx();
         }
     }
 

@@ -34,6 +34,9 @@ void spi_comm_push_rx(const uint8_t *buf, uint16_t len);
 // RX: parse from RX ring buffer → return completed packet (caller must FreeUDPPacket)
 UDPPacket* spi_comm_parse_rx(void);
 
+// RX: ล้าง rx ring buffer + state การ parse ที่ค้างอยู่ (ใช้ตอน resync หลัง stall ยาวนาน)
+void spi_comm_flush_rx(void);
+
 #ifdef __cplusplus
 }
 #endif
