@@ -31,7 +31,9 @@ static void spi_hal_init() {
     spi_slave_interface_config_t slv_cfg = {};
     slv_cfg.spics_io_num = PIN_CS;
     slv_cfg.flags        = 0;
-    slv_cfg.queue_size   = 1;
+    // queue_size=2: เผื่อ transaction ใหม่ให้คิวได้แม้ transaction ก่อนหน้ายังรอ master clock อยู่
+    // (queue_size=1 เคยทำให้ spi_slave_transmit() ค้างถาวรถ้า master จังหวะไม่ตรงพอดี ต้องรีเซ็ตบอร์ด)
+    slv_cfg.queue_size   = 2;
     slv_cfg.mode         = 0;
 
     ESP_ERROR_CHECK(spi_slave_initialize(SPI2_HOST, &bus_cfg, &slv_cfg, SPI_DMA_CH_AUTO));
