@@ -7,12 +7,15 @@
 
 #include <cstdio>
 #include <cstring>
+#include <opencv2/opencv.hpp>
 
 #define BUF_SIZE SPI_COMM_BUF_SIZE
 
 // เฟรมภาพ QVGA grayscale 320x240 = 76800 ไบต์ = SPI_COMM_DATA_PAYLOAD_SIZE
 #define IMAGE_WIDTH  320
 #define IMAGE_HEIGHT 240
+
+static const char* WINDOW_NAME = "SPI Frame";
 
 static hal::SPIBus*    g_spi   = nullptr;
 static hal::GPIOReady* g_ready = nullptr;
@@ -25,21 +28,12 @@ static inline uint16_t get_u16le(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
 }
 
-// บันทึกเฟรม grayscale 320x240 ลงไฟล์ .pgm (รูปแบบเปิดดูได้ด้วย GIMP/IrfanView/feh ฯลฯ)
-static void save_frame_pgm(const char* path, const uint8_t* data, uint32_t data_size) {
-    if (data_size < (uint32_t)(IMAGE_WIDTH * IMAGE_HEIGHT)) return;
-    FILE* f = fopen(path, "wb");
-    if (!f) return;
-    fprintf(f, "P5\n%d %d\n255\n", IMAGE_WIDTH, IMAGE_HEIGHT);
-    fwrite(data, 1, (size_t)IMAGE_WIDTH * IMAGE_HEIGHT, f);
-    fclose(f);
-}
-
 void app_init() {
     spi_comm_init();
     app_state_init(SPI_COMM_DATA_CAPACITY);
     g_spi   = new hal::SPIBus("/dev/spidev0.0", 1000000);
     g_ready = new hal::GPIOReady("/dev/gpiochip4", 22);
+    cv::namedWindow(WINDOW_NAME, cv::WINDOW_AUTOSIZE);
 }
 
 void app_tick() {
@@ -110,8 +104,11 @@ void app_tick() {
         for (uint32_t i = 0; i < 8 && i < data_size; i++) printf(" %02X", data[i]);
         printf("\n");
 
-        // บันทึกเฟรมล่าสุดเป็นไฟล์ภาพ .pgm เพื่อดูว่าภาพที่ส่งมาเป็นแบบไหน
-        save_frame_pgm("frame_latest.pgm", data, data_size);
-        printf("[FRAME SAVED] frame_latest.pgm\n");
+        // แสดงเฟรมล่าสุดแบบเรียลไทม์ผ่านหน้าต่าง OpenCV
+        if (data_size >= (uint32_t)(IMAGE_WIDTH * IMAGE_HEIGHT)) {
+            cv::Mat img(IMAGE_HEIGHT, IMAGE_WIDTH, CV_8UC1, (void*)data);
+            cv::imshow(WINDOW_NAME, img);
+            cv::waitKey(1);
+        }
     }
 }
