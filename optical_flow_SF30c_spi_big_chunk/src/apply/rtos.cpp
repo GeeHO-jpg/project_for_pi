@@ -96,6 +96,14 @@ static volatile uint32_t g_last_seq = 0;
 
 static volatile  bool send_img = false;
 
+// ── shared QVGA grayscale frame snapshot (76800 bytes, PSRAM) ──
+// เขียนโดย process task (มี fb อยู่แล้วจาก esp_camera_fb_get ของตัวเอง)
+// อ่านโดย send_img_task ตอนรับ CMD_INFO เพื่อไม่ต้องเรียก esp_camera_fb_get() แข่งกัน
+// (ลด [W][cam_hal] Failed to get frame: timeout จาก fb_count=2)
+static SemaphoreHandle_t g_img_mtx = nullptr;
+static uint8_t* g_img_snapshot = nullptr;
+static volatile bool g_img_snapshot_ready = false;
+
 static uint8_t s_tx_buf[9 + CHUNK_SIZE + 4];
 static uint8_t s_rx_buf[9 + CHUNK_SIZE + 4];
 // static const uint8_t PACKETHEADER_SIGNATURE[4] = {'R', 'C', 'S', 'A'};
@@ -202,6 +210,8 @@ void rtos_init(){
 
     dist_mtx = xSemaphoreCreateMutex();
     g_pyq = xSemaphoreCreateMutex();
+    g_img_mtx = xSemaphoreCreateMutex();
+    g_img_snapshot = (uint8_t*)heap_caps_malloc(SPI_COMM_DATA_PAYLOAD_SIZE, MALLOC_CAP_SPIRAM);
     s_print_q = xQueueCreate(4, sizeof(PrintMsg));
  
     xTaskCreatePinnedToCore(process,"process",16384,NULL,5,NULL,1); 
@@ -436,6 +446,16 @@ void process(void *arg){
             }
         }
 
+
+        // ── อัปเดต snapshot ภาพ QVGA grayscale ให้ send_img_task ใช้ตอบ CMD_INFO ──
+        // (ใช้ fb ที่ process จับมาแล้ว ไม่เรียก esp_camera_fb_get() ซ้ำในอีก task)
+        if (g_img_snapshot && fb->len >= SPI_COMM_DATA_PAYLOAD_SIZE) {
+            if (xSemaphoreTake(g_img_mtx, 0) == pdTRUE) {
+                memcpy(g_img_snapshot, fb->buf, SPI_COMM_DATA_PAYLOAD_SIZE);
+                g_img_snapshot_ready = true;
+                xSemaphoreGive(g_img_mtx);
+            }
+        }
 
         esp_camera_fb_return(fb);
 
@@ -687,14 +707,12 @@ void send_img_task(void*)
 
         if (pkt) {
             if (pkt->header->cmd == CMD_PROTO_INFO) {
-                // ── CMD_INFO: จับภาพ snapshot ใหม่ แล้วตอบ chunk_size/total_chunks/last_chunk_size ──
-                if (img_snapshot) {
-                    camera_fb_t *fb = esp_camera_fb_get();
-                    if (fb) {
-                        if (fb->len >= SPI_COMM_DATA_PAYLOAD_SIZE) {
-                            memcpy(img_snapshot, fb->buf, SPI_COMM_DATA_PAYLOAD_SIZE);
-                        }
-                        esp_camera_fb_return(fb);
+                // ── CMD_INFO: คัดลอก snapshot ล่าสุดที่ process task จับไว้ แล้วตอบ chunk_size/total_chunks/last_chunk_size ──
+                // (ไม่เรียก esp_camera_fb_get() เอง เพื่อไม่แข่ง frame buffer กับ process task -> กัน [W][cam_hal] timeout)
+                if (img_snapshot && g_img_snapshot && g_img_snapshot_ready) {
+                    if (xSemaphoreTake(g_img_mtx, pdMS_TO_TICKS(5)) == pdTRUE) {
+                        memcpy(img_snapshot, g_img_snapshot, SPI_COMM_DATA_PAYLOAD_SIZE);
+                        xSemaphoreGive(g_img_mtx);
                     }
                 }
 
