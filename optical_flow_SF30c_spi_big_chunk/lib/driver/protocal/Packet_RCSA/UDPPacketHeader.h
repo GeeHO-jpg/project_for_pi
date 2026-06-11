@@ -17,7 +17,9 @@
 extern "C" {
 #endif
 
-#define UDPPAYLOAD_MAX_SIZE     1024
+// ต้อง >= SPI_COMM_FRAME_PAYLOAD_SIZE (3276) เพื่อให้ ProcessBufferSerialComm/RunReceiveSerialComm
+// ไม่ปฏิเสธ/ตัด payload ของ CMD_INFO/CMD_DATA แบบ big_chunk
+#define UDPPAYLOAD_MAX_SIZE     4096
 #define UDPPACKETHEADER_SIZE    9
 
 static const uint8_t PACKETHEADER_SIGNATURE[4] = {'R', 'C', 'S', 'A'};
