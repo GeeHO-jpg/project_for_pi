@@ -28,6 +28,6 @@ g++ -std=c++17 -Wall -Wextra \
   -I app/driver \
   -I app/hal \
   -lgpiod \
-  -o spi_master_state
+  -o spi_big_chunk
 
-echo "Build done -> ./spi_master_state"
+echo "Build done -> ./spi_big_chunk"

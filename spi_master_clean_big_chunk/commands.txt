@@ -2,11 +2,11 @@
 
 chmod +x build.sh
 
-cd ~/Desktop/project_for_pi/spi_master_comm
+cd ~/Desktop/project_for_pi/spi_master_clean_big_chunk
 ./build.sh
 
 == RUN ==
-sudo ./spi_test
+sudo ./spi_big_chunk
 
 == RUN ตอน BOOT (systemd service) ==
 sudo cp spi_master_clean.service /etc/systemd/system/
