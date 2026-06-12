@@ -35,12 +35,18 @@ loop (วนตลอด)
 
 หมายเหตุ - 1-tick pipeline delay:
   SPI เป็น full-duplex "ping-pong": tx ที่ส่งออกในรอบนี้ จะได้ rx ตอบกลับใน "รอบถัดไป"
-  ดังนั้น rx ที่ parse ในรอบนี้ อาจเป็นคำตอบของ tx ที่ "คนละ state" กับ state ปัจจุบัน
-  (เช่น เพิ่งเปลี่ยนจาก INFO_REQUEST → DATA_REQUEST แต่ rx รอบนี้ยังเป็นคำตอบของ CMD_INFO อยู่)
+  ดังนั้น rx ที่ parse ในรอบนี้ คือคำตอบของ tx ที่ส่งไปใน "รอบก่อนหน้า" เสมอ (lag คงที่ 1 tick)
 
-  เราไม่ต้อง track เรื่องนี้เป็นพิเศษ เพราะ PARSE จะเช็ค cmd ของ rx ให้ตรงกับ state ปัจจุบันเสมอ
-  ถ้าไม่ตรง (cmd คนละแบบ, หรือ chunk_index ที่ echo มาเป็นตัวที่เคยรับแล้ว) ก็แค่ "ไม่ทำอะไร"
-  แล้ว PREPARE รอบถัดไปจะส่งคำขอเดิมซ้ำเอง — ระบบจะ sync ตัวเองเข้าที่ภายในไม่กี่ tick
+  state = DATA_REQUEST ชดเชย lag นี้ด้วย tx_seq (จำนวน CMD_DATA ที่ส่งไปแล้ว):
+    - PREPARE ขอ chunk = min(tx_seq, total_chunks-1)  (ขอล่วงหน้า 1 ก้าวเทียบกับ next_index)
+    - PARSE   คาดว่า rx รอบนี้คือคำตอบของ chunk = min(tx_seq-1, total_chunks-1)
+              ถ้า echoed_index ตรงกับค่านี้ และตรงกับ next_index (chunk ที่ยังไม่ได้รับ)
+              -> เก็บข้อมูล, next_index++, tx_seq++
+              ถ้าไม่ตรง (cmd ผิด, payload สั้น, หรือ echoed_index ไม่ตรง) -> tx_seq++ เฉยๆ
+                 (ขอ chunk เดิมซ้ำในรอบถัดไป ระบบจะ sync ตัวเองเข้าที่)
+
+  ตอนเปลี่ยน INFO_REQUEST -> DATA_REQUEST: next_index=tx_seq=0
+  ตอน resync (stall watchdog): next_index=tx_seq=0, กลับไป INFO_REQUEST
 */
 
 // เริ่มต้น state machine
