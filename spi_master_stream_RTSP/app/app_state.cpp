@@ -122,11 +122,26 @@ bool app_state_handle_rx(UDPPacket* pkt) {
         case CommState::DataRequest: {
             if (!pkt || pkt->header->cmd != static_cast<uint8_t>(CommCmd::Data)
                      || pkt->header->payload_size < 2) {
+                // debug: พิมพ์ทุก ๆ STALL_RESYNC_THRESHOLD tick ที่ไม่คืบหน้า เพื่อดูว่าได้ pkt อะไรกลับมา
+                if (g_ctx.stall_ticks % STALL_RESYNC_THRESHOLD == 0) {
+                    if (!pkt) {
+                        printf("[DBG] DataRequest idx=%u: pkt=null (no complete packet parsed)\n",
+                               g_ctx.next_index);
+                    } else {
+                        printf("[DBG] DataRequest idx=%u: pkt cmd=%u payload_size=%u (expect cmd=%u, >=2)\n",
+                               g_ctx.next_index, pkt->header->cmd, pkt->header->payload_size,
+                               (unsigned)static_cast<uint8_t>(CommCmd::Data));
+                    }
+                }
                 break; // cmd ไม่ตรง/packet เสีย -> tick ถัดไปส่ง CMD_DATA(next_index) ซ้ำเอง
             }
 
             uint16_t echoed_index = get_u16le(&pkt->payload[0]);
             if (echoed_index != g_ctx.next_index) {
+                if (g_ctx.stall_ticks % STALL_RESYNC_THRESHOLD == 0) {
+                    printf("[DBG] DataRequest idx=%u: got echoed_index=%u (mismatch)\n",
+                           g_ctx.next_index, echoed_index);
+                }
                 break; // คำตอบของ chunk เก่าที่เคยรับไปแล้ว (duplicate จาก pipeline delay) -> ข้าม
             }
 
