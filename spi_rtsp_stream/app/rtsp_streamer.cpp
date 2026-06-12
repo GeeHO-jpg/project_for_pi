@@ -10,6 +10,7 @@
 #include <sys/socket.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <string>
@@ -22,6 +23,7 @@ GstElement* g_appsrc = nullptr;
 GMainLoop* g_loop = nullptr;
 std::thread g_loop_thread;
 std::string g_mount_path = "/spi";
+std::string g_service = "8554";
 int g_width = 0;
 int g_height = 0;
 int g_fps = 15;
@@ -75,7 +77,8 @@ std::string make_launch_string() {
 
 void print_rtsp_urls() {
     std::printf("[RTSP] stream ready on all interfaces, mount=%s\n", g_mount_path.c_str());
-    std::printf("[RTSP] URL template: rtsp://<pi-ip>:8554%s\n", g_mount_path.c_str());
+    std::printf("[RTSP] URL template: rtsp://<pi-ip>:%s%s\n",
+                g_service.c_str(), g_mount_path.c_str());
 
     ifaddrs* addrs = nullptr;
     if (getifaddrs(&addrs) != 0) {
@@ -93,8 +96,8 @@ void print_rtsp_urls() {
         char ip[INET_ADDRSTRLEN] = {0};
         auto* addr = reinterpret_cast<sockaddr_in*>(it->ifa_addr);
         if (inet_ntop(AF_INET, &addr->sin_addr, ip, sizeof(ip))) {
-            std::printf("[RTSP] URL: rtsp://%s:8554%s (%s)\n",
-                        ip, g_mount_path.c_str(), it->ifa_name);
+            std::printf("[RTSP] URL: rtsp://%s:%s%s (%s)\n",
+                        ip, g_service.c_str(), g_mount_path.c_str(), it->ifa_name);
         }
     }
 
@@ -124,6 +127,10 @@ bool rtsp_streamer_start(int width, int height, int fps, const char* mount_path)
     if (mount_path && mount_path[0] != '\0') {
         g_mount_path = mount_path;
     }
+    const char* env_port = std::getenv("SPI_RTSP_PORT");
+    if (env_port && env_port[0] != '\0') {
+        g_service = env_port;
+    }
 
     int argc = 0;
     char** argv = nullptr;
@@ -131,7 +138,7 @@ bool rtsp_streamer_start(int width, int height, int fps, const char* mount_path)
 
     GstRTSPServer* server = gst_rtsp_server_new();
     gst_rtsp_server_set_address(server, "0.0.0.0");
-    gst_rtsp_server_set_service(server, "8554");
+    gst_rtsp_server_set_service(server, g_service.c_str());
 
     GstRTSPMountPoints* mounts = gst_rtsp_server_get_mount_points(server);
     GstRTSPMediaFactory* factory = gst_rtsp_media_factory_new();
@@ -146,7 +153,7 @@ bool rtsp_streamer_start(int width, int height, int fps, const char* mount_path)
     g_object_unref(mounts);
 
     if (gst_rtsp_server_attach(server, nullptr) == 0) {
-        std::fprintf(stderr, "[RTSP] failed to attach server on port 8554\n");
+        std::fprintf(stderr, "[RTSP] failed to attach server on port %s\n", g_service.c_str());
         g_object_unref(server);
         return false;
     }

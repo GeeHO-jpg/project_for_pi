@@ -49,3 +49,4 @@ g++ -std=c++17 -Wall -Wextra \
 
 echo "Build done -> sudo ./spi_rtsp"
 echo "RTSP URL -> rtsp://<pi-ip>:8554/spi"
+echo "Use another port -> SPI_RTSP_PORT=8555 ./spi_rtsp"

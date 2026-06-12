@@ -44,6 +44,13 @@ sudo apt install -y build-essential pkg-config ffmpeg libgpiod-dev \
 ./spi_rtsp --test-pattern
 ```
 
+If another service already uses port `8554`, run on another RTSP port:
+
+```bash
+SPI_RTSP_PORT=8555 ./spi_rtsp --test-pattern
+sudo env SPI_RTSP_PORT=8555 ./spi_rtsp
+```
+
 Then verify from another terminal or client machine:
 
 ```bash

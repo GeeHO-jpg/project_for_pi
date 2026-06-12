@@ -17,6 +17,11 @@ cd ~/Desktop/project_for_pi/spi_rtsp_stream
 
 sudo ./spi_rtsp
 
+== RUN ON ANOTHER RTSP PORT ==
+
+SPI_RTSP_PORT=8555 ./spi_rtsp --test-pattern
+sudo env SPI_RTSP_PORT=8555 ./spi_rtsp
+
 == RUN RTSP TEST PATTERN WITHOUT SPI HARDWARE ==
 
 ./spi_rtsp --test-pattern
