@@ -1,0 +1,28 @@
+#pragma once
+#include <gpiod.h>
+
+namespace hal {
+
+class GPIOReady {
+public:
+    // chip_path: "/dev/gpiochip4" บน Pi5
+    // line: GPIO number เช่น 22
+    GPIOReady(const char* chip_path, unsigned int line);
+    ~GPIOReady();
+
+    GPIOReady(const GPIOReady&)            = delete;
+    GPIOReady& operator=(const GPIOReady&) = delete;
+
+    // block จนกว่าจะเห็น rising edge หรือ pin เป็น HIGH อยู่แล้ว
+    // timeout_ms < 0 = รอไม่มีกำหนด
+    // return true = ready, false = timeout
+    bool waitReady(int timeout_ms = -1);
+
+private:
+    struct gpiod_chip*         chip_;
+    struct gpiod_line_request* req_;
+    unsigned int               offset_;
+    bool                       pin_was_high_;   // HIGH ณ ตอน init → ไม่ต้องรอ edge แรก
+};
+
+} // namespace hal
