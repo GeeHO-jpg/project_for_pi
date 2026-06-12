@@ -1,21 +1,45 @@
+== INSTALL DEPENDENCIES ON PI ==
+
+sudo apt update
+sudo apt install -y build-essential pkg-config ffmpeg libgpiod-dev \
+  libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+  libgstrtspserver-1.0-dev gstreamer1.0-tools \
+  gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+  gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly
+
 == BUILD ==
 
 chmod +x build.sh
-
-cd ~/Desktop/project_for_pi/spi_master_clean_big_chunk
+cd ~/Desktop/project_for_pi/spi_rtsp_stream
 ./build.sh
 
 == RUN ==
-sudo ./spi_stream
 
-== RUN ตอน BOOT (systemd service) ==
-sudo cp spi_master_clean.service /etc/systemd/system/
+sudo ./spi_rtsp
+
+== RUN RTSP TEST PATTERN WITHOUT SPI HARDWARE ==
+
+./spi_rtsp --test-pattern
+
+== VIEW RTSP ==
+
+hostname -I
+
+ffprobe -rtsp_transport tcp -v error -select_streams v:0 \
+  -show_entries stream=codec_name,width,height,avg_frame_rate \
+  -of default=nw=1 rtsp://<pi-ip>:8554/spi
+
+ffplay rtsp://<pi-ip>:8554/spi
+vlc rtsp://<pi-ip>:8554/spi
+
+== RUN ON BOOT (systemd) ==
+
+sudo cp spi_rtsp.service /etc/systemd/system/spi_rtsp.service
 sudo systemctl daemon-reload
-sudo systemctl enable spi_master_clean
-sudo systemctl start spi_master_clean
+sudo systemctl enable spi_rtsp.service
+sudo systemctl start spi_rtsp.service
 
--- คำสั่งเพิ่มเติม --
-ดูสถานะ:     sudo systemctl status spi_master_clean.service
-หยุด:         sudo systemctl stop spi_master_clean.service
-ปิด autoboot: sudo systemctl disable spi_master_clean.service
-restart:      sudo systemctl restart spi_master_clean.service
+status:  sudo systemctl status spi_rtsp.service
+stop:    sudo systemctl stop spi_rtsp.service
+disable: sudo systemctl disable spi_rtsp.service
+restart: sudo systemctl restart spi_rtsp.service
