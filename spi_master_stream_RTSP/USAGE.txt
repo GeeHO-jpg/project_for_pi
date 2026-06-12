@@ -1,0 +1,115 @@
+==================================================================
+ spi_master_stream_RTSP - คู่มือการใช้งาน
+==================================================================
+
+ภาพรวม
+------
+โปรแกรมนี้รับภาพ (320x240 grayscale, QVGA) จากฝั่ง ESP32 (slave)
+ผ่าน SPI full-duplex แบบ ping-pong protocol แล้วแสดงผล/สตรีมออก
+ได้ 2 โหมด เลือกได้ตอน build ผ่าน environment variable OUTPUT_MODE:
+
+  OUTPUT_MODE=OPENCV (default) -> แสดงภาพผ่านหน้าต่าง OpenCV (imshow)
+  OUTPUT_MODE=RTSP             -> เปิด ffmpeg เป็น subprocess
+                                   encode H.264 แล้ว push ไปยัง
+                                   mediamtx (RTSP server) เพื่อให้
+                                   อุปกรณ์อื่น (เช่น Skydroid G12)
+                                   ดึงสตรีมผ่านวง LAN ได้
+
+
+------------------------------------------------------------------
+1) Build
+------------------------------------------------------------------
+
+โหมด OpenCV (แสดงผลบนหน้าจอ Pi โดยตรง):
+
+    ./build.sh
+
+โหมด RTSP (สตรีมออกผ่าน mediamtx):
+
+    OUTPUT_MODE=RTSP ./build.sh
+
+    # กำหนดปลายทาง RTSP เอง (ถ้าไม่ตรงกับ default):
+    OUTPUT_MODE=RTSP RTSP_URL=rtsp://127.0.0.1:8554/spi ./build.sh
+
+ผลลัพธ์ build คือไฟล์ ./spi_stream
+
+
+------------------------------------------------------------------
+2) รันโปรแกรม
+------------------------------------------------------------------
+
+    ./spi_stream
+
+โหมด OpenCV: จะเปิดหน้าต่างชื่อ "SPI Frame" แสดงภาพแบบเรียลไทม์
+โหมด RTSP  : จะเปิด ffmpeg เป็น subprocess และส่งภาพไปยัง
+              rtsp://127.0.0.1:8554/spi (หรือ URL ที่กำหนดตอน build)
+
+ถ้าเห็นข้อความ "[RTSP] failed to start ffmpeg" แปลว่า ffmpeg
+เปิดไม่สำเร็จ ให้ตรวจสอบว่าติดตั้ง ffmpeg แล้ว (sudo apt install ffmpeg)
+และ mediamtx รันอยู่ก่อนเริ่มโปรแกรม
+
+
+------------------------------------------------------------------
+3) ตั้งค่า mediamtx (RTSP server) - ต้องทำก่อนรันโหมด RTSP
+------------------------------------------------------------------
+
+3.1 ดาวน์โหลด (ทำครั้งเดียว) บน Raspberry Pi (arm64):
+
+    ARCH=arm64
+    URL=$(curl -s https://api.github.com/repos/bluenviron/mediamtx/releases/latest \
+        | grep browser_download_url \
+        | grep "linux_${ARCH}.tar.gz" \
+        | cut -d '"' -f4)
+    curl -L -o mediamtx.tar.gz "$URL"
+
+3.2 แตกไฟล์ไปยังโฟลเดอร์ปลายทาง:
+
+    mkdir -p /home/blueberrygay/mediamtx
+    tar -xzf mediamtx.tar.gz -C /home/blueberrygay/mediamtx
+
+3.3 ทดสอบรันตรงๆก่อน (ยังไม่ต้องตั้ง service):
+
+    /home/blueberrygay/mediamtx/mediamtx /home/blueberrygay/mediamtx/mediamtx.yml
+
+    ต้องเห็นบรรทัดประมาณนี้ถึงจะถือว่าใช้ได้:
+      INF [RTSP] started with listeners on :8554 (TCP/RTSP), ...
+
+    กด Ctrl+C เพื่อหยุดก่อนไปขั้นถัดไป
+
+3.4 ติดตั้งเป็น systemd service (รันอัตโนมัติตอนบูต):
+
+    sudo cp mediamtx.service /etc/systemd/system/
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now mediamtx
+    sudo systemctl status mediamtx     # ควรเป็น active (running)
+
+    หมายเหตุ: mediamtx.service อ้าง path
+      /home/blueberrygay/mediamtx/mediamtx
+      /home/blueberrygay/mediamtx/mediamtx.yml
+    ถ้าติดตั้งไว้ path อื่น ให้แก้ไฟล์ mediamtx.service ให้ตรงก่อน copy
+
+
+------------------------------------------------------------------
+4) ทดสอบรับสตรีม
+------------------------------------------------------------------
+
+จากเครื่องอื่นในวง LAN เดียวกัน เปิด VLC:
+
+    Media > Open Network Stream > ใส่
+    rtsp://<ip-ของ-pi>:8554/spi
+
+ถ้าเห็นภาพ แสดงว่าใช้งานได้ ขั้นต่อไปให้ตั้งค่า Skydroid G12
+ให้ดึงสตรีมจาก URL เดียวกัน (เปลี่ยน <ip-ของ-pi> เป็น IP จริง
+ของ Pi ในวง LAN ที่ G12 เชื่อมต่ออยู่)
+
+
+------------------------------------------------------------------
+5) สรุป path/พอร์ตที่เกี่ยวข้อง
+------------------------------------------------------------------
+
+  mediamtx RTSP listen      : 0.0.0.0:8554 (เข้าได้ทุก IP ในวง LAN)
+  ffmpeg publish เข้า mediamtx : rtsp://127.0.0.1:8554/spi (จากในเครื่อง Pi เอง)
+  client (VLC/G12) ดูสตรีม   : rtsp://<pi-lan-ip>:8554/spi
+  SPI bus (master)          : /dev/spidev0.0 @ 1 MHz
+  GPIO ready handshake      : /dev/gpiochip4 pin 22
+  ภาพ                       : 320x240 grayscale (76800 bytes/เฟรม)

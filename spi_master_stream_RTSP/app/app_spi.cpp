@@ -13,7 +13,7 @@
 // เฟรมภาพ QVGA grayscale 320x240 = 76800 ไบต์ = SPI_COMM_DATA_PAYLOAD_SIZE
 #define IMAGE_WIDTH  320
 #define IMAGE_HEIGHT 240
-
+#define OUTPUT_MODE_RTSP 1
 // ── เลือกโหมด output ตอน build ─────────────────────────────────────────────
 // ปกติ (ไม่ define อะไร)  -> แสดงผลผ่านหน้าต่าง OpenCV (imshow)
 // -DOUTPUT_MODE_RTSP      -> เปิด ffmpeg เป็น subprocess แล้ว push H.264/RTSP ไปยัง mediamtx
