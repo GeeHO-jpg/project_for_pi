@@ -29,6 +29,6 @@ g++ -std=c++17 -Wall -Wextra \
   -I app/hal \
   -lgpiod \
   $(pkg-config --cflags --libs opencv4) \
-  -o spi_stream
+  -o spi_rtsp
 
-echo "Build done ->sudo ./spi_stream"
+echo "Build done ->sudo ./spi_rtsp"

@@ -30,11 +30,6 @@ struct Ctx {
     // ── chunk_index ที่กำลังขอ/รออยู่ (ใช้เฉพาะ state DataRequest) ──
     uint16_t next_index = 0;
 
-    // จำนวน CMD_DATA ที่ส่งไปแล้วใน state DataRequest รอบนี้ (รวม tick ปัจจุบัน)
-    // ใช้ชดเชย pipeline lag 1 tick: TX ขอ chunk = min(tx_seq, total_chunks-1)
-    // ส่วน RX ที่ได้ในรอบนี้คือคำตอบของ chunk = min(tx_seq-1, total_chunks-1)
-    uint16_t tx_seq = 0;
-
     uint8_t* data_assembled = nullptr; // กำลังประกอบ
     uint8_t* data_ready     = nullptr; // commit แล้ว, พร้อมใช้งาน
     bool     data_ready_valid = false;
@@ -73,16 +68,11 @@ void app_state_prepare_tx() {
             spi_comm_build_tx(static_cast<uint8_t>(CommCmd::Info), payload, sizeof(payload));
             break;
 
-        case CommState::DataRequest: {
-            // CMD_DATA: ขอ chunk ล่วงหน้า 1 ก้าวตาม tx_seq เพื่อชดเชย pipeline lag 1 tick
-            // (เมื่อถึง chunk สุดท้ายแล้วก็ขอซ้ำตัวสุดท้ายไปจนกว่าจะได้ response)
-            uint16_t request_index = (g_ctx.tx_seq < g_ctx.data_total_chunks)
-                                          ? g_ctx.tx_seq
-                                          : (uint16_t)(g_ctx.data_total_chunks - 1);
-            put_u16le(&payload[0], request_index);
+        case CommState::DataRequest:
+            // CMD_DATA: ขอ chunk ที่ next_index, ฝัง index ลง payload[0:1] (uint16_t little-endian)
+            put_u16le(&payload[0], g_ctx.next_index);
             spi_comm_build_tx(static_cast<uint8_t>(CommCmd::Data), payload, sizeof(payload));
             break;
-        }
     }
 }
 
@@ -124,55 +114,46 @@ bool app_state_handle_rx(UDPPacket* pkt) {
 
             // ต่อไปขอ CMD_DATA ตั้งแต่ chunk แรก
             g_ctx.next_index = 0;
-            g_ctx.tx_seq     = 0;
             g_ctx.state      = CommState::DataRequest;
             progressed       = true;
             break;
         }
 
         case CommState::DataRequest: {
-            // รอบนี้คาดว่าจะได้ response ของ chunk = min(tx_seq-1, total_chunks-1)
-            // (เพราะ TX รอบก่อนหน้าขอ chunk = min(tx_seq-1, total_chunks-1) ไปแล้ว)
-            // ถ้า tx_seq==0 แปลว่ายังไม่เคยส่ง CMD_DATA เลย -> rx รอบนี้เป็นของ state เก่า (CMD_INFO) แน่นอน ข้าม
-            if (g_ctx.tx_seq >= 1 && pkt
-                    && pkt->header->cmd == static_cast<uint8_t>(CommCmd::Data)
-                    && pkt->header->payload_size >= 2) {
-
-                uint16_t echoed_index = get_u16le(&pkt->payload[0]);
-                uint16_t expected_index = (uint16_t)(g_ctx.tx_seq - 1);
-                if (expected_index >= g_ctx.data_total_chunks) {
-                    expected_index = (uint16_t)(g_ctx.data_total_chunks - 1);
-                }
-
-                if (echoed_index == expected_index && echoed_index == g_ctx.next_index) {
-                    uint16_t this_chunk_size = (echoed_index == (uint16_t)(g_ctx.data_total_chunks - 1))
-                                                    ? g_ctx.data_last_chunk_size
-                                                    : g_ctx.data_chunk_size;
-
-                    uint16_t copy_len = pkt->header->payload_size - 2;
-                    if (copy_len > this_chunk_size) copy_len = this_chunk_size;
-
-                    uint32_t offset = (uint32_t)echoed_index * g_ctx.data_chunk_size;
-                    memcpy(g_ctx.data_assembled + offset, &pkt->payload[2], copy_len);
-
-                    g_ctx.next_index++;
-                    progressed = true; // ได้ chunk ใหม่เพิ่ม -> ถือว่าขยับไปข้างหน้าแล้ว
-
-                    if (g_ctx.next_index >= g_ctx.data_total_chunks) {
-                        // ครบทุก chunk แล้ว -> commit เป็นก้อนข้อมูลพร้อมใช้ แล้ววนกลับไปขอ CMD_INFO
-                        memcpy(g_ctx.data_ready, g_ctx.data_assembled, g_ctx.data_payload_size);
-                        g_ctx.data_ready_valid = true;
-                        committed = true;
-
-                        g_ctx.next_index = 0;
-                        g_ctx.tx_seq     = 0;
-                        g_ctx.state      = CommState::InfoRequest;
-                        break;
-                    }
-                }
+            if (!pkt || pkt->header->cmd != static_cast<uint8_t>(CommCmd::Data)
+                     || pkt->header->payload_size < 2) {
+                break; // cmd ไม่ตรง/packet เสีย -> tick ถัดไปส่ง CMD_DATA(next_index) ซ้ำเอง
             }
 
-            g_ctx.tx_seq++;
+            uint16_t echoed_index = get_u16le(&pkt->payload[0]);
+            if (echoed_index != g_ctx.next_index) {
+                break; // คำตอบของ chunk เก่าที่เคยรับไปแล้ว (duplicate จาก pipeline delay) -> ข้าม
+            }
+
+            uint16_t this_chunk_size = (echoed_index == (uint16_t)(g_ctx.data_total_chunks - 1))
+                                            ? g_ctx.data_last_chunk_size
+                                            : g_ctx.data_chunk_size;
+
+            uint16_t copy_len = pkt->header->payload_size - 2;
+            if (copy_len > this_chunk_size) copy_len = this_chunk_size;
+
+            uint32_t offset = (uint32_t)echoed_index * g_ctx.data_chunk_size;
+            memcpy(g_ctx.data_assembled + offset, &pkt->payload[2], copy_len);
+
+            g_ctx.next_index++;
+            progressed = true; // ได้ chunk ใหม่เพิ่ม -> ถือว่าขยับไปข้างหน้าแล้ว
+
+            if (g_ctx.next_index < g_ctx.data_total_chunks) {
+                break; // ยังไม่ครบ -> tick ถัดไปขอ chunk ถัดไปต่อ
+            }
+
+            // ครบทุก chunk แล้ว -> commit เป็นก้อนข้อมูลพร้อมใช้ แล้ววนกลับไปขอ CMD_INFO
+            memcpy(g_ctx.data_ready, g_ctx.data_assembled, g_ctx.data_payload_size);
+            g_ctx.data_ready_valid = true;
+            committed = true;
+
+            g_ctx.next_index = 0;
+            g_ctx.state      = CommState::InfoRequest;
             break;
         }
     }
@@ -191,7 +172,6 @@ bool app_state_handle_rx(UDPPacket* pkt) {
                    g_ctx.next_index);
             g_ctx.stall_ticks = 0;
             g_ctx.next_index  = 0;
-            g_ctx.tx_seq      = 0;
             g_ctx.state       = CommState::InfoRequest;
             spi_comm_flush_rx();
         }
