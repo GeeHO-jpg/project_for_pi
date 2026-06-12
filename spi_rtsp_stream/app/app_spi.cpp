@@ -24,7 +24,7 @@ static uint8_t s_rx_buf[BUF_SIZE];
 void app_init() {
     spi_comm_init();
     app_state_init(SPI_COMM_DATA_CAPACITY);
-    g_spi   = new hal::SPIBus("/dev/spidev0.0", 30000000);
+    g_spi   = new hal::SPIBus("/dev/spidev0.0", 10000000);
     g_ready = new hal::GPIOReady("/dev/gpiochip4", 22);
     if (!rtsp_streamer_start(IMAGE_WIDTH, IMAGE_HEIGHT, 15, "/spi")) {
         std::fprintf(stderr, "[RTSP] disabled because server failed to start\n");
