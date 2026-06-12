@@ -23,7 +23,7 @@ GstElement* g_appsrc = nullptr;
 GMainLoop* g_loop = nullptr;
 std::thread g_loop_thread;
 std::string g_mount_path = "/spi";
-std::string g_service = "8554";
+std::string g_service = "8555";
 int g_width = 0;
 int g_height = 0;
 int g_fps = 15;

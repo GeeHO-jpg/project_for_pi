@@ -10,7 +10,8 @@ rtsp://<pi-ip>:8554/spi
 ```
 
 - Bind address: `0.0.0.0`
-- RTSP port: `8554`
+- Default manual RTSP port: `8554`
+- Systemd service RTSP port: `8555`
 - RTSP path: `/spi`
 - Video codec: H.264
 - Source frame format: `GRAY8`
@@ -83,7 +84,9 @@ sudo cp spi_rtsp.service /etc/systemd/system/spi_rtsp.service
 sudo systemctl daemon-reload
 sudo systemctl enable spi_rtsp.service
 sudo systemctl start spi_rtsp.service
+sudo journalctl -u spi_rtsp.service -f
 ```
 
 The service waits for `network-online.target` before starting so the printed
-RTSP URL can include the Pi network interface address.
+RTSP URL can include the Pi network interface address. The service file sets
+`SPI_RTSP_PORT=8555` to avoid conflicts with `mediamtx` on port `8554`.

@@ -32,10 +32,10 @@ hostname -I
 
 ffprobe -rtsp_transport tcp -v error -select_streams v:0 \
   -show_entries stream=codec_name,width,height,avg_frame_rate \
-  -of default=nw=1 rtsp://<pi-ip>:8554/spi
+  -of default=nw=1 rtsp://<pi-ip>:8555/spi
 
-ffplay rtsp://<pi-ip>:8554/spi
-vlc rtsp://<pi-ip>:8554/spi
+ffplay rtsp://<pi-ip>:8555/spi
+vlc rtsp://<pi-ip>:8555/spi
 
 == RUN ON BOOT (systemd) ==
 
@@ -43,6 +43,8 @@ sudo cp spi_rtsp.service /etc/systemd/system/spi_rtsp.service
 sudo systemctl daemon-reload
 sudo systemctl enable spi_rtsp.service
 sudo systemctl start spi_rtsp.service
+
+journal: sudo journalctl -u spi_rtsp.service -f
 
 status:  sudo systemctl status spi_rtsp.service
 stop:    sudo systemctl stop spi_rtsp.service

@@ -5,6 +5,7 @@ After=network-online.target
 
 [Service]
 Type=simple
+Environment=SPI_RTSP_PORT=8555
 ExecStart=/home/blueberrygay/Desktop/project_for_pi/spi_rtsp_stream/spi_rtsp
 WorkingDirectory=/home/blueberrygay/Desktop/project_for_pi/spi_rtsp_stream
 Restart=on-failure
