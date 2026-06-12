@@ -7,6 +7,9 @@
 
 #include <cstdio>
 #include <cstring>
+#include <ifaddrs.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #define BUF_SIZE SPI_COMM_BUF_SIZE
 
@@ -39,11 +42,31 @@ static hal::GPIOReady* g_ready = nullptr;
 static uint8_t s_tx_buf[BUF_SIZE];
 static uint8_t s_rx_buf[BUF_SIZE];
 
+// แสดง IPv4 ของทุก network interface (ยกเว้น loopback) เพื่อให้รู้ว่าจะต่อ RTSP มาที่ IP ไหน
+static void print_local_ips() {
+    struct ifaddrs* ifaddr = nullptr;
+    if (getifaddrs(&ifaddr) == -1) return;
+
+    for (struct ifaddrs* ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
+        if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_INET) continue;
+        if (strcmp(ifa->ifa_name, "lo") == 0) continue;
+
+        char ip[INET_ADDRSTRLEN];
+        struct sockaddr_in* addr = (struct sockaddr_in*)ifa->ifa_addr;
+        inet_ntop(AF_INET, &addr->sin_addr, ip, sizeof(ip));
+        printf("[NET] %s: %s\n", ifa->ifa_name, ip);
+    }
+
+    freeifaddrs(ifaddr);
+}
+
 void app_init() {
     spi_comm_init();
     app_state_init(SPI_COMM_DATA_CAPACITY);
     g_spi   = new hal::SPIBus("/dev/spidev0.0", 1000000);
     g_ready = new hal::GPIOReady("/dev/gpiochip4", 22);
+
+    print_local_ips();
 
 #if defined(OUTPUT_MODE_RTSP)
     // กัน process ตายด้วย SIGPIPE ถ้า ffmpeg ปลายทาง pipe หลุด/ตาย
@@ -61,6 +84,8 @@ void app_init() {
     g_ffmpeg = popen(cmd, "w");
     if (!g_ffmpeg) {
         fprintf(stderr, "[RTSP] failed to start ffmpeg: %s\n", cmd);
+    } else {
+        printf("[RTSP] streaming to %s\n", RTSP_URL);
     }
 #else
     cv::namedWindow(WINDOW_NAME, cv::WINDOW_AUTOSIZE);
