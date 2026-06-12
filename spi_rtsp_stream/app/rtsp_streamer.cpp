@@ -139,6 +139,7 @@ bool rtsp_streamer_start(int width, int height, int fps, const char* mount_path)
 
     gst_rtsp_media_factory_set_launch(factory, launch.c_str());
     gst_rtsp_media_factory_set_shared(factory, TRUE);
+    gst_rtsp_media_factory_set_latency(factory, 0);
     g_signal_connect(factory, "media-configure", G_CALLBACK(on_media_configure), nullptr);
 
     gst_rtsp_mount_points_add_factory(mounts, g_mount_path.c_str(), factory);
