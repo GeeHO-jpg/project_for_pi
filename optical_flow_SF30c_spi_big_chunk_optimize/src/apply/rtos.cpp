@@ -98,7 +98,7 @@ static volatile  bool send_img = false;
 
 // ── shared QVGA grayscale frame snapshot (76800 bytes, PSRAM) ──
 // เขียนโดย process task (มี fb อยู่แล้วจาก esp_camera_fb_get ของตัวเอง)
-// อ่านโดย send_img_task ตอนรับ CMD_INFO เพื่อไม่ต้องเรียก esp_camera_fb_get() แข่งกัน
+// อ่านโดย send_img_task ตอนเริ่มเฟรม CMD_DATA index=0 เพื่อไม่ต้องเรียก esp_camera_fb_get() แข่งกัน
 // (ลด [W][cam_hal] Failed to get frame: timeout จาก fb_count=2)
 static SemaphoreHandle_t g_img_mtx = nullptr;
 static uint8_t* g_img_snapshot = nullptr;
@@ -447,7 +447,7 @@ void process(void *arg){
         }
 
 
-        // ── อัปเดต snapshot ภาพ QVGA grayscale ให้ send_img_task ใช้ตอบ CMD_INFO ──
+        // ── อัปเดต snapshot ภาพ QVGA grayscale ให้ send_img_task ใช้ตอนเริ่มเฟรม ──
         // (ใช้ fb ที่ process จับมาแล้ว ไม่เรียก esp_camera_fb_get() ซ้ำในอีก task)
         if (g_img_snapshot && fb->len >= SPI_COMM_DATA_PAYLOAD_SIZE) {
             if (xSemaphoreTake(g_img_mtx, 0) == pdTRUE) {
@@ -682,11 +682,13 @@ void send_img_task(void*)
 
     // buffer เก็บภาพ snapshot เต็มเฟรม (76.8KB) ไว้ใน PSRAM สำหรับตอบ CMD_DATA ทีละ chunk
     static uint8_t* img_snapshot = (uint8_t*)heap_caps_malloc(SPI_COMM_DATA_PAYLOAD_SIZE, MALLOC_CAP_SPIRAM);
+    static bool img_snapshot_valid = false;
     static uint32_t stat_trans = 0;
     static uint32_t stat_timeout = 0;
     static uint32_t stat_rx_pkt = 0;
     static uint32_t stat_info = 0;
     static uint32_t stat_data = 0;
+    static uint32_t stat_frame_start = 0;
     static uint32_t stat_no_pkt = 0;
     static uint16_t stat_last_req_idx = 0;
     static uint16_t stat_last_tx_idx = 0;
@@ -722,15 +724,6 @@ void send_img_task(void*)
             stat_rx_pkt++;
             if (pkt->header->cmd == CMD_PROTO_INFO) {
                 stat_info++;
-                // ── CMD_INFO: คัดลอก snapshot ล่าสุดที่ process task จับไว้ แล้วตอบ chunk_size/total_chunks/last_chunk_size ──
-                // (ไม่เรียก esp_camera_fb_get() เอง เพื่อไม่แข่ง frame buffer กับ process task -> กัน [W][cam_hal] timeout)
-                if (img_snapshot && g_img_snapshot && g_img_snapshot_ready) {
-                    if (xSemaphoreTake(g_img_mtx, pdMS_TO_TICKS(5)) == pdTRUE) {
-                        memcpy(img_snapshot, g_img_snapshot, SPI_COMM_DATA_PAYLOAD_SIZE);
-                        xSemaphoreGive(g_img_mtx);
-                    }
-                }
-
                 put_u16le(&resp_buf[0], (uint16_t)DATA_CHUNK_SIZE);
                 put_u16le(&resp_buf[2], (uint16_t)DATA_TOTAL_CHUNKS);
                 put_u16le(&resp_buf[4], DATA_LAST_CHUNK_SIZE);
@@ -742,9 +735,20 @@ void send_img_task(void*)
                 uint16_t chunk_index = (pkt->header->payload_size >= 2) ? get_u16le(&pkt->payload[0]) : 0;
                 stat_last_req_idx = chunk_index;
 
+                if (chunk_index == 0) {
+                    stat_frame_start++;
+                    if (img_snapshot && g_img_snapshot && g_img_snapshot_ready) {
+                        if (xSemaphoreTake(g_img_mtx, pdMS_TO_TICKS(5)) == pdTRUE) {
+                            memcpy(img_snapshot, g_img_snapshot, SPI_COMM_DATA_PAYLOAD_SIZE);
+                            img_snapshot_valid = true;
+                            xSemaphoreGive(g_img_mtx);
+                        }
+                    }
+                }
+
                 put_u16le(&resp_buf[0], chunk_index);
                 stat_last_tx_idx = chunk_index;
-                if (img_snapshot) {
+                if (img_snapshot && img_snapshot_valid) {
                     get_chunk(&resp_buf[2], img_snapshot, SPI_COMM_DATA_PAYLOAD_SIZE, DATA_CHUNK_SIZE, chunk_index);
                 }
                 spi_comm_build_tx(CMD_PROTO_DATA, resp_buf, CHUNK_SIZE);
@@ -759,24 +763,27 @@ void send_img_task(void*)
 
         int64_t now_us = esp_timer_get_time();
         if ((now_us - stat_last_print_us) >= 1000000) {
-            printf("[SPI_SLV] trans=%u/s rx_pkt=%u/s info=%u data=%u no_pkt=%u timeout=%u "
-                   "req_idx=%u tx_idx=%u received=%u snapshot_ready=%u\n",
+            printf("[SPI_SLV] trans=%u/s rx_pkt=%u/s info=%u data=%u frame_start=%u no_pkt=%u timeout=%u "
+                   "req_idx=%u tx_idx=%u received=%u snapshot_ready=%u active_snapshot=%u\n",
                    (unsigned)stat_trans,
                    (unsigned)stat_rx_pkt,
                    (unsigned)stat_info,
                    (unsigned)stat_data,
+                   (unsigned)stat_frame_start,
                    (unsigned)stat_no_pkt,
                    (unsigned)stat_timeout,
                    (unsigned)stat_last_req_idx,
                    (unsigned)stat_last_tx_idx,
                    (unsigned)received,
-                   (unsigned)(g_img_snapshot_ready ? 1 : 0));
+                   (unsigned)(g_img_snapshot_ready ? 1 : 0),
+                   (unsigned)(img_snapshot_valid ? 1 : 0));
 
             stat_trans = 0;
             stat_timeout = 0;
             stat_rx_pkt = 0;
             stat_info = 0;
             stat_data = 0;
+            stat_frame_start = 0;
             stat_no_pkt = 0;
             stat_last_print_us = now_us;
         }

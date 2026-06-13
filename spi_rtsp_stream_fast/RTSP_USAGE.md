@@ -77,6 +77,57 @@ sudo ./spi_rtsp
 The RTSP server starts before the first SPI frame arrives. Clients can connect
 after startup; video begins once complete SPI frames are received.
 
+## Verify Optimized SPI Protocol
+
+After flashing the matching ESP32 firmware and running `sudo ./spi_rtsp`, check
+the Pi `[STATS]` and ESP32 `[SPI_SLV]` logs together.
+
+Expected steady-state Pi log properties:
+
+```text
+wrong_index=0 incomplete=0 resync=0 rtsp_fail=0
+```
+
+- `tx_info` should stop increasing after startup unless a resync happens.
+- `tx_frame_start` should keep increasing and should track frame starts.
+- `incomplete` should stay `0`; if it increases, the Pi skipped a frame because
+  one or more chunks were missing.
+- `frames` should be higher than the old CMD_INFO-per-frame protocol.
+
+Expected steady-state ESP32 log properties:
+
+```text
+no_pkt=0 timeout=0 active_snapshot=1
+```
+
+- `info` should be low after startup unless the Pi resyncs.
+- `frame_start` should increase with each `CMD_DATA index=0`.
+- `snapshot_ready` should stay `1` once the camera task has produced frames.
+
+If `resync` increases, the Pi intentionally returns to `CMD_INFO` to refresh
+the cached chunk config before resuming `CMD_DATA` streaming.
+
+You can also save combined Pi and ESP32 logs to a text file and run:
+
+```bash
+python3 verify_protocol_logs.py run.log
+```
+
+The verifier expects the same steady-state properties above and reports
+`RESULT: PASS` or the counters that need attention.
+
+One practical way to create `run.log` is:
+
+```bash
+# Pi terminal
+sudo ./spi_rtsp 2>&1 | tee pi.log
+
+# ESP32 serial terminal output should be saved as esp32.log.
+# Then combine both logs before running the verifier:
+cat pi.log esp32.log > run.log
+python3 verify_protocol_logs.py run.log
+```
+
 ## Run On Boot
 
 ```bash

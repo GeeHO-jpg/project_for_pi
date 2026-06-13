@@ -2,12 +2,23 @@
 #include <cstdint>
 #include "driver/Packet_RCSA/UDPPacket.h"
 
+/*
+Protocol note:
+- CMD_INFO is a sync/config step requested at startup and after resync.
+- Normal streaming stays in DataRequest and cycles CMD_DATA index 0..last.
+- CMD_DATA index 0 starts a new frame on the ESP32 side and selects a fresh snapshot.
+- SPI is full-duplex with a one-transaction response delay, so the state machine
+  tracks both the next requested index and the expected response index.
+*/
+
 enum class CommCmd : uint8_t {
     Info = 0x01,
     Data = 0x02,
 };
 
-// state ของ master state machine — วนเป็นวงกลม: INFO_REQUEST -> DATA_REQUEST -> INFO_REQUEST -> ...
+// state ของ master state machine:
+//   INFO_REQUEST ใช้ตอน startup/resync เพื่อ sync config
+//   DATA_REQUEST ใช้ stream ปกติแบบวน CMD_DATA index 0..last ต่อเนื่อง
 enum class CommState : uint8_t {
     InfoRequest, // กำลังขอ CMD_INFO (chunk_size/total_chunks ของ CMD_DATA)
     DataRequest, // กำลังขอ CMD_DATA ทีละ chunk ตาม chunk_index
@@ -29,8 +40,8 @@ loop (วนตลอด)
                  → เก็บข้อมูลลง buffer ที่ offset = echoed_index * chunk_size
                    (chunk สุดท้ายคัดลอกแค่ last_chunk_size ไบต์)
                  → ขอ chunk_index ถัดไป (เฉพาะถ้า echoed_index ไม่ใช่ index เก่าที่เคยรับแล้ว)
-                 → ครบทุก chunk แล้ว → commit เป็นก้อนข้อมูลพร้อมใช้ (ขนาด = (total_chunks-1)*chunk_size + last_chunk_size)
-                   → state = INFO_REQUEST, chunk_index = 0
+                  → ครบทุก chunk แล้ว → commit เป็นก้อนข้อมูลพร้อมใช้ (ขนาด = (total_chunks-1)*chunk_size + last_chunk_size)
+                   → อยู่ใน state = DATA_REQUEST ต่อ และวนไปขอ CMD_DATA index=0 เพื่อเริ่ม snapshot/frame ถัดไป
               ถ้าไม่ใช่ → ไม่ทำอะไร (tick ถัดไปจะส่ง CMD_DATA(chunk_index เดิม) ซ้ำโดยอัตโนมัติ)
 
 หมายเหตุ - 1-tick pipeline delay:
@@ -38,9 +49,8 @@ loop (วนตลอด)
   ดังนั้น rx ที่ parse ในรอบนี้ อาจเป็นคำตอบของ tx ที่ "คนละ state" กับ state ปัจจุบัน
   (เช่น เพิ่งเปลี่ยนจาก INFO_REQUEST → DATA_REQUEST แต่ rx รอบนี้ยังเป็นคำตอบของ CMD_INFO อยู่)
 
-  เราไม่ต้อง track เรื่องนี้เป็นพิเศษ เพราะ PARSE จะเช็ค cmd ของ rx ให้ตรงกับ state ปัจจุบันเสมอ
-  ถ้าไม่ตรง (cmd คนละแบบ, หรือ chunk_index ที่ echo มาเป็นตัวที่เคยรับแล้ว) ก็แค่ "ไม่ทำอะไร"
-  แล้ว PREPARE รอบถัดไปจะส่งคำขอเดิมซ้ำเอง — ระบบจะ sync ตัวเองเข้าที่ภายในไม่กี่ tick
+  เรา track expected response index แยกจาก next request index เพราะ response ของ CMD_DATA จะตามหลัง request 1 transaction
+  ถ้า cmd/index ไม่ตรง จะไม่ commit chunk นั้น และ stall watchdog จะพากลับไป CMD_INFO เมื่อไม่มี progress นานเกิน threshold
 */
 
 // เริ่มต้น state machine
@@ -73,10 +83,14 @@ const uint8_t* app_state_get_ready_data(uint32_t* out_size);
 uint32_t app_state_get_resync_count(void);
 
 struct AppStateDebugCounters {
+    uint32_t tx_info;
+    uint32_t tx_data;
+    uint32_t tx_frame_start;
     uint32_t no_pkt;
     uint32_t wrong_cmd;
     uint32_t bad_payload;
     uint32_t wrong_index;
+    uint32_t incomplete_frames;
     uint32_t commits;
     uint16_t last_expected_index;
     uint16_t last_got_index;

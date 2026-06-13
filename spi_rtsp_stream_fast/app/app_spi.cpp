@@ -71,7 +71,8 @@ void stats_maybe_print() {
 
     std::printf("[STATS] ticks=%.1f/s frames=%.1f/s wait_avg=%.3fms wait_max=%.3fms "
                 "spi_avg=%.3fms spi_max=%.3fms rtsp_fail=%llu resync=%u "
-                "no_pkt=%u wrong_cmd=%u bad_payload=%u wrong_index=%u commits=%u "
+                "tx_info=%u tx_data=%u tx_frame_start=%u "
+                "no_pkt=%u wrong_cmd=%u bad_payload=%u wrong_index=%u incomplete=%u commits=%u "
                 "last_idx=%u/%u last_payload=%u\n",
                 ticks_per_sec,
                 frames_per_sec,
@@ -81,10 +82,14 @@ void stats_maybe_print() {
                 ns_to_ms(g_stats.spi_ns_max),
                 (unsigned long long)rtsp_streamer_get_push_fail_count(),
                 app_state_get_resync_count(),
+                state_debug.tx_info,
+                state_debug.tx_data,
+                state_debug.tx_frame_start,
                 state_debug.no_pkt,
                 state_debug.wrong_cmd,
                 state_debug.bad_payload,
                 state_debug.wrong_index,
+                state_debug.incomplete_frames,
                 state_debug.commits,
                 state_debug.last_expected_index,
                 state_debug.last_got_index,

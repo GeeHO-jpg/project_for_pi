@@ -36,6 +36,8 @@ struct Ctx {
 
     uint8_t* data_assembled = nullptr; // กำลังประกอบ
     uint8_t* data_ready     = nullptr; // commit แล้ว, พร้อมใช้งาน
+    uint8_t* chunk_received = nullptr; // one byte per possible chunk in the current frame
+    uint16_t chunks_received = 0;
     bool     data_ready_valid = false;
 
     // จำนวน tick ติดต่อกันที่ RX FAIL/ไม่ตรงกับ request ปัจจุบัน (ใช้ตรวจจับ slave ค้าง)
@@ -55,14 +57,19 @@ Ctx g_ctx;
 void app_state_init(uint32_t data_capacity) {
     free(g_ctx.data_assembled);
     free(g_ctx.data_ready);
+    free(g_ctx.chunk_received);
 
     g_ctx = Ctx{};
     g_ctx.data_capacity = data_capacity;
 
     g_ctx.data_assembled = (uint8_t*)malloc(data_capacity);
     g_ctx.data_ready     = (uint8_t*)malloc(data_capacity);
+    g_ctx.chunk_received = (uint8_t*)malloc(data_capacity);
     memset(g_ctx.data_assembled, 0, data_capacity);
     memset(g_ctx.data_ready, 0, data_capacity);
+    if (g_ctx.chunk_received) {
+        memset(g_ctx.chunk_received, 0, data_capacity);
+    }
 }
 
 void app_state_prepare_tx() {
@@ -72,6 +79,7 @@ void app_state_prepare_tx() {
         case CommState::InfoRequest:
             // CMD_INFO: ขอ chunk_size/total_chunks ของ CMD_DATA (payload ว่าง)
             spi_comm_build_tx(static_cast<uint8_t>(CommCmd::Info), payload, sizeof(payload));
+            g_ctx.debug.tx_info++;
             g_ctx.last_tx_was_data = false;
             break;
 
@@ -79,10 +87,16 @@ void app_state_prepare_tx() {
             // CMD_DATA: ขอ chunk ที่ next_index, ฝัง index ลง payload[0:1] (uint16_t little-endian)
             put_u16le(&payload[0], g_ctx.next_index);
             spi_comm_build_tx(static_cast<uint8_t>(CommCmd::Data), payload, sizeof(payload));
+            g_ctx.debug.tx_data++;
+            if (g_ctx.next_index == 0) {
+                g_ctx.debug.tx_frame_start++;
+            }
             g_ctx.last_tx_was_data = true;
             g_ctx.last_tx_index = g_ctx.next_index;
             if (g_ctx.next_index + 1 < g_ctx.data_total_chunks) {
                 g_ctx.next_index++;
+            } else {
+                g_ctx.next_index = 0;
             }
             break;
     }
@@ -136,6 +150,10 @@ bool app_state_handle_rx(UDPPacket* pkt) {
             g_ctx.next_index = 0;
             g_ctx.expected_index = 0;
             g_ctx.has_expected_data = false;
+            g_ctx.chunks_received = 0;
+            if (g_ctx.chunk_received) {
+                memset(g_ctx.chunk_received, 0, g_ctx.data_total_chunks);
+            }
             g_ctx.state      = CommState::DataRequest;
             progressed       = true;
             break;
@@ -174,6 +192,17 @@ bool app_state_handle_rx(UDPPacket* pkt) {
             uint16_t copy_len = pkt->header->payload_size - 2;
             if (copy_len > this_chunk_size) copy_len = this_chunk_size;
 
+            if (echoed_index == 0) {
+                g_ctx.chunks_received = 0;
+                if (g_ctx.chunk_received) {
+                    memset(g_ctx.chunk_received, 0, g_ctx.data_total_chunks);
+                }
+            }
+            if (g_ctx.chunk_received && !g_ctx.chunk_received[echoed_index]) {
+                g_ctx.chunk_received[echoed_index] = 1;
+                g_ctx.chunks_received++;
+            }
+
             uint32_t offset = (uint32_t)echoed_index * g_ctx.data_chunk_size;
             memcpy(g_ctx.data_assembled + offset, &pkt->payload[2], copy_len);
 
@@ -183,16 +212,18 @@ bool app_state_handle_rx(UDPPacket* pkt) {
                 break; // ยังไม่ครบ -> tick ถัดไปขอ chunk ถัดไปต่อ
             }
 
-            // ครบทุก chunk แล้ว -> commit เป็นก้อนข้อมูลพร้อมใช้ แล้ววนกลับไปขอ CMD_INFO
+            // ครบทุก chunk แล้ว -> commit เป็นก้อนข้อมูลพร้อมใช้ แล้ววนขอ CMD_DATA frame ถัดไปทันที
+            if (g_ctx.chunks_received != g_ctx.data_total_chunks) {
+                g_ctx.debug.incomplete_frames++;
+                break;
+            }
+
             memcpy(g_ctx.data_ready, g_ctx.data_assembled, g_ctx.data_payload_size);
             g_ctx.data_ready_valid = true;
             committed = true;
             g_ctx.debug.commits++;
 
-            g_ctx.next_index = 0;
-            g_ctx.expected_index = 0;
-            g_ctx.has_expected_data = false;
-            g_ctx.state      = CommState::InfoRequest;
+            g_ctx.state      = CommState::DataRequest;
             break;
         }
     }
@@ -219,6 +250,11 @@ bool app_state_handle_rx(UDPPacket* pkt) {
             g_ctx.next_index  = 0;
             g_ctx.expected_index = 0;
             g_ctx.has_expected_data = false;
+            g_ctx.last_tx_was_data = false;
+            g_ctx.chunks_received = 0;
+            if (g_ctx.chunk_received && g_ctx.data_total_chunks > 0) {
+                memset(g_ctx.chunk_received, 0, g_ctx.data_total_chunks);
+            }
             g_ctx.state       = CommState::InfoRequest;
             spi_comm_flush_rx();
         }
