@@ -37,6 +37,7 @@ struct Ctx {
     // จำนวน tick ติดต่อกันที่ RX FAIL/ไม่ตรงกับ request ปัจจุบัน (ใช้ตรวจจับ slave ค้าง)
     uint32_t stall_ticks = 0;
     uint32_t resync_count = 0;
+    AppStateDebugCounters debug = {};
 };
 
 // ถ้า RX FAIL ติดต่อกันเกินจำนวนนี้ ถือว่า slave ค้าง/รีเซ็ตตัวเองไปแล้ว
@@ -84,8 +85,16 @@ bool app_state_handle_rx(UDPPacket* pkt) {
     switch (g_ctx.state) {
 
         case CommState::InfoRequest: {
-            if (!pkt || pkt->header->cmd != static_cast<uint8_t>(CommCmd::Info)
-                     || pkt->header->payload_size < 6) {
+            if (!pkt) {
+                g_ctx.debug.no_pkt++;
+                break;
+            }
+            if (pkt->header->cmd != static_cast<uint8_t>(CommCmd::Info)) {
+                g_ctx.debug.wrong_cmd++;
+                break;
+            }
+            if (pkt->header->payload_size < 6) {
+                g_ctx.debug.bad_payload++;
                 break; // cmd ไม่ตรง/packet เสีย -> tick ถัดไปส่ง CMD_INFO ซ้ำเอง
             }
 
@@ -121,13 +130,25 @@ bool app_state_handle_rx(UDPPacket* pkt) {
         }
 
         case CommState::DataRequest: {
-            if (!pkt || pkt->header->cmd != static_cast<uint8_t>(CommCmd::Data)
-                     || pkt->header->payload_size < 2) {
+            if (!pkt) {
+                g_ctx.debug.no_pkt++;
+                break;
+            }
+            if (pkt->header->cmd != static_cast<uint8_t>(CommCmd::Data)) {
+                g_ctx.debug.wrong_cmd++;
+                break;
+            }
+            if (pkt->header->payload_size < 2) {
+                g_ctx.debug.bad_payload++;
                 break; // cmd ไม่ตรง/packet เสีย -> tick ถัดไปส่ง CMD_DATA(next_index) ซ้ำเอง
             }
 
             uint16_t echoed_index = get_u16le(&pkt->payload[0]);
             if (echoed_index != g_ctx.next_index) {
+                g_ctx.debug.wrong_index++;
+                g_ctx.debug.last_expected_index = g_ctx.next_index;
+                g_ctx.debug.last_got_index = echoed_index;
+                g_ctx.debug.last_payload_size = pkt->header->payload_size;
                 break; // คำตอบของ chunk เก่าที่เคยรับไปแล้ว (duplicate จาก pipeline delay) -> ข้าม
             }
 
@@ -152,6 +173,7 @@ bool app_state_handle_rx(UDPPacket* pkt) {
             memcpy(g_ctx.data_ready, g_ctx.data_assembled, g_ctx.data_payload_size);
             g_ctx.data_ready_valid = true;
             committed = true;
+            g_ctx.debug.commits++;
 
             g_ctx.next_index = 0;
             g_ctx.state      = CommState::InfoRequest;
@@ -202,4 +224,10 @@ const uint8_t* app_state_get_ready_data(uint32_t* out_size) {
 
 uint32_t app_state_get_resync_count(void) {
     return g_ctx.resync_count;
+}
+
+void app_state_get_debug_counters(AppStateDebugCounters* out) {
+    if (out) {
+        *out = g_ctx.debug;
+    }
 }

@@ -66,8 +66,13 @@ void stats_maybe_print() {
     double wait_avg_ms = g_stats.ticks ? ns_to_ms(g_stats.wait_ns_total / g_stats.ticks) : 0.0;
     double spi_avg_ms = g_stats.ticks ? ns_to_ms(g_stats.spi_ns_total / g_stats.ticks) : 0.0;
 
+    AppStateDebugCounters state_debug{};
+    app_state_get_debug_counters(&state_debug);
+
     std::printf("[STATS] ticks=%.1f/s frames=%.1f/s wait_avg=%.3fms wait_max=%.3fms "
-                "spi_avg=%.3fms spi_max=%.3fms rtsp_fail=%llu resync=%u\n",
+                "spi_avg=%.3fms spi_max=%.3fms rtsp_fail=%llu resync=%u "
+                "no_pkt=%u wrong_cmd=%u bad_payload=%u wrong_index=%u commits=%u "
+                "last_idx=%u/%u last_payload=%u\n",
                 ticks_per_sec,
                 frames_per_sec,
                 wait_avg_ms,
@@ -75,7 +80,15 @@ void stats_maybe_print() {
                 spi_avg_ms,
                 ns_to_ms(g_stats.spi_ns_max),
                 (unsigned long long)rtsp_streamer_get_push_fail_count(),
-                app_state_get_resync_count());
+                app_state_get_resync_count(),
+                state_debug.no_pkt,
+                state_debug.wrong_cmd,
+                state_debug.bad_payload,
+                state_debug.wrong_index,
+                state_debug.commits,
+                state_debug.last_expected_index,
+                state_debug.last_got_index,
+                state_debug.last_payload_size);
 
     g_stats = Stats{};
 }

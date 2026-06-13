@@ -71,3 +71,16 @@ const uint8_t* app_state_get_ready_data(uint32_t* out_size);
 
 // Number of stall watchdog resyncs since startup.
 uint32_t app_state_get_resync_count(void);
+
+struct AppStateDebugCounters {
+    uint32_t no_pkt;
+    uint32_t wrong_cmd;
+    uint32_t bad_payload;
+    uint32_t wrong_index;
+    uint32_t commits;
+    uint16_t last_expected_index;
+    uint16_t last_got_index;
+    uint16_t last_payload_size;
+};
+
+void app_state_get_debug_counters(AppStateDebugCounters* out);
