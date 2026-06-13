@@ -36,6 +36,7 @@ struct Ctx {
 
     // จำนวน tick ติดต่อกันที่ RX FAIL/ไม่ตรงกับ request ปัจจุบัน (ใช้ตรวจจับ slave ค้าง)
     uint32_t stall_ticks = 0;
+    uint32_t resync_count = 0;
 };
 
 // ถ้า RX FAIL ติดต่อกันเกินจำนวนนี้ ถือว่า slave ค้าง/รีเซ็ตตัวเองไปแล้ว
@@ -171,6 +172,7 @@ bool app_state_handle_rx(UDPPacket* pkt) {
                    (g_ctx.state == CommState::InfoRequest) ? "INFO_REQUEST" : "DATA_REQUEST",
                    g_ctx.next_index);
             g_ctx.stall_ticks = 0;
+            g_ctx.resync_count++;
             g_ctx.next_index  = 0;
             g_ctx.state       = CommState::InfoRequest;
             spi_comm_flush_rx();
@@ -196,4 +198,8 @@ void app_state_get_info(uint16_t* out_chunk_size, uint16_t* out_total_chunks) {
 const uint8_t* app_state_get_ready_data(uint32_t* out_size) {
     if (out_size) *out_size = g_ctx.data_payload_size;
     return g_ctx.data_ready_valid ? g_ctx.data_ready : nullptr;
+}
+
+uint32_t app_state_get_resync_count(void) {
+    return g_ctx.resync_count;
 }

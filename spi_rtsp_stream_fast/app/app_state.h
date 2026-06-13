@@ -68,3 +68,6 @@ void app_state_get_info(uint16_t* out_chunk_size, uint16_t* out_total_chunks);
 // ก้อนข้อมูล CMD_DATA ล่าสุดที่ commit ไว้ใช้งาน, คืน nullptr ถ้ายังไม่เคยรับครบสักรอบ
 // out_size = ขนาดข้อมูลจริง = (total_chunks-1)*chunk_size + last_chunk_size
 const uint8_t* app_state_get_ready_data(uint32_t* out_size);
+
+// Number of stall watchdog resyncs since startup.
+uint32_t app_state_get_resync_count(void);

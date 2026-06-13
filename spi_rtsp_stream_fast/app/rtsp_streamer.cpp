@@ -30,6 +30,7 @@ int g_fps = 15;
 uint32_t g_frame_size = 0;
 bool g_started = false;
 uint64_t g_frame_index = 0;
+uint64_t g_push_fail_count = 0;
 
 void on_media_configure(GstRTSPMediaFactory*, GstRTSPMedia* media, gpointer) {
     GstElement* element = gst_rtsp_media_get_element(media);
@@ -209,6 +210,7 @@ void rtsp_streamer_publish_gray8(const uint8_t* data, uint32_t size) {
 
     GstFlowReturn ret = gst_app_src_push_buffer(GST_APP_SRC(appsrc), buffer);
     if (ret != GST_FLOW_OK) {
+        ++g_push_fail_count;
         std::fprintf(stderr, "[RTSP] push buffer failed: %d\n", ret);
         clear_appsrc_if_current(appsrc);
     }
@@ -218,4 +220,8 @@ void rtsp_streamer_publish_gray8(const uint8_t* data, uint32_t size) {
 
 const char* rtsp_streamer_url_path() {
     return g_mount_path.c_str();
+}
+
+uint64_t rtsp_streamer_get_push_fail_count() {
+    return g_push_fail_count;
 }

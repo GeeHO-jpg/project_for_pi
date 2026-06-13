@@ -6,6 +6,7 @@
 #include "app_state.h"
 #include "rtsp_streamer.hpp"
 
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 
@@ -21,6 +22,66 @@ static hal::GPIOReady* g_ready = nullptr;
 static uint8_t s_tx_buf[BUF_SIZE];
 static uint8_t s_rx_buf[BUF_SIZE];
 
+namespace {
+
+using Clock = std::chrono::steady_clock;
+
+struct Stats {
+    Clock::time_point window_start = Clock::now();
+    uint64_t ticks = 0;
+    uint64_t frames = 0;
+    uint64_t wait_ns_total = 0;
+    uint64_t wait_ns_max = 0;
+    uint64_t spi_ns_total = 0;
+    uint64_t spi_ns_max = 0;
+};
+
+Stats g_stats;
+
+uint64_t elapsed_ns(Clock::time_point start, Clock::time_point end) {
+    return (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+}
+
+double ns_to_ms(uint64_t ns) {
+    return (double)ns / 1000000.0;
+}
+
+void stats_add_duration(uint64_t ns, uint64_t& total, uint64_t& max_value) {
+    total += ns;
+    if (ns > max_value) {
+        max_value = ns;
+    }
+}
+
+void stats_maybe_print() {
+    auto now = Clock::now();
+    uint64_t window_ns = elapsed_ns(g_stats.window_start, now);
+    if (window_ns < 1000000000ull) {
+        return;
+    }
+
+    double seconds = (double)window_ns / 1000000000.0;
+    double ticks_per_sec = (double)g_stats.ticks / seconds;
+    double frames_per_sec = (double)g_stats.frames / seconds;
+    double wait_avg_ms = g_stats.ticks ? ns_to_ms(g_stats.wait_ns_total / g_stats.ticks) : 0.0;
+    double spi_avg_ms = g_stats.ticks ? ns_to_ms(g_stats.spi_ns_total / g_stats.ticks) : 0.0;
+
+    std::printf("[STATS] ticks=%.1f/s frames=%.1f/s wait_avg=%.3fms wait_max=%.3fms "
+                "spi_avg=%.3fms spi_max=%.3fms rtsp_fail=%llu resync=%u\n",
+                ticks_per_sec,
+                frames_per_sec,
+                wait_avg_ms,
+                ns_to_ms(g_stats.wait_ns_max),
+                spi_avg_ms,
+                ns_to_ms(g_stats.spi_ns_max),
+                (unsigned long long)rtsp_streamer_get_push_fail_count(),
+                app_state_get_resync_count());
+
+    g_stats = Stats{};
+}
+
+} // namespace
+
 void app_init() {
     spi_comm_init();
     app_state_init(SPI_COMM_DATA_CAPACITY);
@@ -32,6 +93,7 @@ void app_init() {
 }
 
 void app_tick() {
+    g_stats.ticks++;
 
     // ── PREPARE: เตรียม tx packet ตัวถัดไปตาม state ปัจจุบัน ────────────────
     app_state_prepare_tx();
@@ -41,10 +103,16 @@ void app_tick() {
     spi_comm_drain_tx(s_tx_buf, BUF_SIZE);
 
     // ── HAL: wait for ESP32 ready signal ──────────────────────────────────
+    auto wait_start = Clock::now();
     g_ready->waitReady();
+    auto wait_end = Clock::now();
+    stats_add_duration(elapsed_ns(wait_start, wait_end), g_stats.wait_ns_total, g_stats.wait_ns_max);
 
     // ── TX: SPI full-duplex transfer (rx ที่ได้คือคำตอบของ tx รอบก่อนหน้า) ──
+    auto spi_start = Clock::now();
     g_spi->transfer(s_tx_buf, s_rx_buf, BUF_SIZE);
+    auto spi_end = Clock::now();
+    stats_add_duration(elapsed_ns(spi_start, spi_end), g_stats.spi_ns_total, g_stats.spi_ns_max);
 
     // ── Driver: push RX bytes → RX ring buffer → parse ────────────────────
     spi_comm_push_rx(s_rx_buf, BUF_SIZE);
@@ -56,6 +124,7 @@ void app_tick() {
     if (pkt) FreeUDPPacket(pkt);
 
     if (data_ready) {
+        g_stats.frames++;
         uint32_t data_size = 0;
         const uint8_t* data = app_state_get_ready_data(&data_size);
 
@@ -64,4 +133,6 @@ void app_tick() {
             rtsp_streamer_publish_gray8(data, data_size);
         }
     }
+
+    stats_maybe_print();
 }
