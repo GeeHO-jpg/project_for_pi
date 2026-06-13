@@ -29,6 +29,10 @@ struct Ctx {
 
     // ── chunk_index ที่กำลังขอ/รออยู่ (ใช้เฉพาะ state DataRequest) ──
     uint16_t next_index = 0;
+    uint16_t expected_index = 0;
+    uint16_t last_tx_index = 0;
+    bool     has_expected_data = false;
+    bool     last_tx_was_data = false;
 
     uint8_t* data_assembled = nullptr; // กำลังประกอบ
     uint8_t* data_ready     = nullptr; // commit แล้ว, พร้อมใช้งาน
@@ -68,12 +72,18 @@ void app_state_prepare_tx() {
         case CommState::InfoRequest:
             // CMD_INFO: ขอ chunk_size/total_chunks ของ CMD_DATA (payload ว่าง)
             spi_comm_build_tx(static_cast<uint8_t>(CommCmd::Info), payload, sizeof(payload));
+            g_ctx.last_tx_was_data = false;
             break;
 
         case CommState::DataRequest:
             // CMD_DATA: ขอ chunk ที่ next_index, ฝัง index ลง payload[0:1] (uint16_t little-endian)
             put_u16le(&payload[0], g_ctx.next_index);
             spi_comm_build_tx(static_cast<uint8_t>(CommCmd::Data), payload, sizeof(payload));
+            g_ctx.last_tx_was_data = true;
+            g_ctx.last_tx_index = g_ctx.next_index;
+            if (g_ctx.next_index + 1 < g_ctx.data_total_chunks) {
+                g_ctx.next_index++;
+            }
             break;
     }
 }
@@ -124,6 +134,8 @@ bool app_state_handle_rx(UDPPacket* pkt) {
 
             // ต่อไปขอ CMD_DATA ตั้งแต่ chunk แรก
             g_ctx.next_index = 0;
+            g_ctx.expected_index = 0;
+            g_ctx.has_expected_data = false;
             g_ctx.state      = CommState::DataRequest;
             progressed       = true;
             break;
@@ -144,9 +156,12 @@ bool app_state_handle_rx(UDPPacket* pkt) {
             }
 
             uint16_t echoed_index = get_u16le(&pkt->payload[0]);
-            if (echoed_index != g_ctx.next_index) {
+            if (!g_ctx.has_expected_data) {
+                break;
+            }
+            if (echoed_index != g_ctx.expected_index) {
                 g_ctx.debug.wrong_index++;
-                g_ctx.debug.last_expected_index = g_ctx.next_index;
+                g_ctx.debug.last_expected_index = g_ctx.expected_index;
                 g_ctx.debug.last_got_index = echoed_index;
                 g_ctx.debug.last_payload_size = pkt->header->payload_size;
                 break; // คำตอบของ chunk เก่าที่เคยรับไปแล้ว (duplicate จาก pipeline delay) -> ข้าม
@@ -162,10 +177,9 @@ bool app_state_handle_rx(UDPPacket* pkt) {
             uint32_t offset = (uint32_t)echoed_index * g_ctx.data_chunk_size;
             memcpy(g_ctx.data_assembled + offset, &pkt->payload[2], copy_len);
 
-            g_ctx.next_index++;
             progressed = true; // ได้ chunk ใหม่เพิ่ม -> ถือว่าขยับไปข้างหน้าแล้ว
 
-            if (g_ctx.next_index < g_ctx.data_total_chunks) {
+            if (echoed_index + 1 < g_ctx.data_total_chunks) {
                 break; // ยังไม่ครบ -> tick ถัดไปขอ chunk ถัดไปต่อ
             }
 
@@ -176,6 +190,8 @@ bool app_state_handle_rx(UDPPacket* pkt) {
             g_ctx.debug.commits++;
 
             g_ctx.next_index = 0;
+            g_ctx.expected_index = 0;
+            g_ctx.has_expected_data = false;
             g_ctx.state      = CommState::InfoRequest;
             break;
         }
@@ -184,6 +200,11 @@ bool app_state_handle_rx(UDPPacket* pkt) {
     // ── stall watchdog: ถ้าไม่มีความคืบหน้าติดต่อกันนานเกินไป (slave ค้าง/รีเซ็ตตัวเอง) ──
     // resync กลับไปขอ CMD_INFO ใหม่ทั้งหมด + ล้าง rx ring buffer ที่อาจมีขยะตกค้างอยู่
     // ป้องกันไม่ให้ค้างขอ chunk เดิม (เช่น idx=17) วนไปตลอดจนต้องไปรีเซ็ตฝั่ง slave เอง
+    if (g_ctx.state == CommState::DataRequest && g_ctx.last_tx_was_data) {
+        g_ctx.expected_index = g_ctx.last_tx_index;
+        g_ctx.has_expected_data = true;
+    }
+
     if (progressed) {
         g_ctx.stall_ticks = 0;
     } else {
@@ -196,6 +217,8 @@ bool app_state_handle_rx(UDPPacket* pkt) {
             g_ctx.stall_ticks = 0;
             g_ctx.resync_count++;
             g_ctx.next_index  = 0;
+            g_ctx.expected_index = 0;
+            g_ctx.has_expected_data = false;
             g_ctx.state       = CommState::InfoRequest;
             spi_comm_flush_rx();
         }
